@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v5';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -944,6 +944,19 @@ $('editor').addEventListener('drop', e => {
     upload(f).catch(err => setStatus('Upload failed: ' + err.message));
   }
 });
+
+function applySpell(on) {
+  $('editor').spellcheck = on;
+  $('spell').textContent = 'Spell: ' + (on ? 'on' : 'off');
+  localStorage.setItem('spellcheck', on ? 'on' : 'off');
+}
+$('spell').addEventListener('click', () => {
+  applySpell(!$('editor').spellcheck);
+  /* blur/focus makes the browser re-scan existing text immediately */
+  $('editor').blur();
+  $('editor').focus();
+});
+applySpell(localStorage.getItem('spellcheck') !== 'off');
 
 $('appver').textContent = APP_VERSION;
 console.log('weekly-report ' + APP_VERSION);

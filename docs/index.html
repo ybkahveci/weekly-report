@@ -99,6 +99,7 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   <button id="new">New week</button>
   <button id="history">History</button>
   <button id="folder" title="Switch reports folder">Folder…</button>
+  <button id="spell" title="Toggle spell checking (English)"></button>
   <span id="status"></span>
   <span class="grow"></span>
   <button id="copy">Copy email</button>
@@ -109,7 +110,7 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     <div class="ohead">Projects</div>
     <div id="olist"></div>
   </aside>
-  <textarea id="editor" spellcheck="false"></textarea>
+  <textarea id="editor" spellcheck="true" lang="en"></textarea>
   <iframe id="preview"></iframe>
 </main>
 <div id="histview">
@@ -147,6 +148,6 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

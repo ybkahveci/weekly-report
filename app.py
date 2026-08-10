@@ -677,6 +677,7 @@ main { flex: 1; display: flex; min-height: 0; }
   <span class="brand">Weekly Report</span>
   <select id="file"></select>
   <button id="new">New week</button>
+  <button id="spell" title="Toggle spell checking (English)"></button>
   <span id="status"></span>
   <span class="grow"></span>
   <button id="copy">Copy email</button>
@@ -687,7 +688,7 @@ main { flex: 1; display: flex; min-height: 0; }
     <div class="ohead">Projects</div>
     <div id="olist"></div>
   </aside>
-  <textarea id="editor" spellcheck="false"></textarea>
+  <textarea id="editor" spellcheck="true" lang="en"></textarea>
   <iframe id="preview"></iframe>
 </main>
 <script>
@@ -932,6 +933,19 @@ $('editor').addEventListener('drop', e => {
     upload(f).catch(err => setStatus('Upload failed: ' + err.message));
   }
 });
+
+function applySpell(on) {
+  $('editor').spellcheck = on;
+  $('spell').textContent = 'Spell: ' + (on ? 'on' : 'off');
+  localStorage.setItem('spellcheck', on ? 'on' : 'off');
+}
+$('spell').addEventListener('click', () => {
+  applySpell(!$('editor').spellcheck);
+  // blur/focus makes the browser re-scan existing text immediately
+  $('editor').blur();
+  $('editor').focus();
+});
+applySpell(localStorage.getItem('spellcheck') !== 'off');
 
 loadList().catch(e => setStatus(e.message));
 </script>
