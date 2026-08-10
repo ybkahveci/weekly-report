@@ -14,6 +14,8 @@
 
 'use strict';
 
+const APP_VERSION = 'v4';
+
 /* ---------------------------------------------------------------- email CSS */
 
 const MAX_IMG_WIDTH = 480;  /* content column: 640 - 150 name column */
@@ -554,7 +556,9 @@ function isoWeek(d) {
 
 /* --------------------------------------------------------- folder + storage */
 
-const state = { dir: null, current: null, dirty: false, saveTimer: null };
+const state = {
+  dir: null, current: null, dirty: false, saveTimer: null, lastEmail: null,
+};
 
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -640,6 +644,7 @@ async function openFile(name) {
 async function refresh() {
   const report = parseReport($('editor').value);
   const { html, warnings } = await renderEmail(report);
+  state.lastEmail = html;
   const sizeKb = new Blob([html]).size / 1024;
   if (sizeKb > 95) {
     warnings.push('Email exceeds ~100 KB — Gmail may clip the message');
@@ -899,18 +904,29 @@ function copyRich(html, plain) {
   return ok;
 }
 
-$('copy').addEventListener('click', async () => {
-  try {
-    if (state.dirty) { clearTimeout(state.saveTimer); await save(); }
-    const { html } = await renderEmail(parseReport($('editor').value));
-    if (!copyRich(html, $('editor').value)) {
-      await navigator.clipboard.write([new ClipboardItem({
-        'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
-      })]);
-    }
+$('copy').addEventListener('click', () => {
+  /* execCommand only works synchronously inside the click stack, so copy
+     the cached render (kept fresh by refresh()) with no awaits before it */
+  const plain = $('editor').value;
+  const html = state.lastEmail;
+  if (!html) {
+    setStatus('Nothing rendered yet');
+    return;
+  }
+  if (copyRich(html, plain)) {
     setStatus('Copied — paste into your mail compose window');
-  } catch (e) { setStatus('Copy failed: ' + e.message); }
+  } else {
+    navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([plain], { type: 'text/plain' }),
+    })]).then(
+      () => setStatus('Copied (fallback path — styling may degrade)'),
+      e => setStatus('Copy failed: ' + e.message));
+  }
+  if (state.dirty) {
+    clearTimeout(state.saveTimer);
+    save().catch(e => setStatus('Save failed: ' + e.message));
+  }
 });
 $('editor').addEventListener('paste', e => {
   for (const item of e.clipboardData.items) {
@@ -929,4 +945,6 @@ $('editor').addEventListener('drop', e => {
   }
 });
 
+$('appver').textContent = APP_VERSION;
+console.log('weekly-report ' + APP_VERSION);
 init().catch(e => { $('gate-err').textContent = e.message; });

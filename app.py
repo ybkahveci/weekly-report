@@ -692,7 +692,7 @@ main { flex: 1; display: flex; min-height: 0; }
 </main>
 <script>
 const $ = id => document.getElementById(id);
-let current = null, saveTimer = null, dirty = false;
+let current = null, saveTimer = null, dirty = false, lastEmail = null;
 
 async function api(url, opts) {
   const r = await fetch(url, opts);
@@ -731,6 +731,9 @@ function refresh() {
   const y = fr.contentWindow ? fr.contentWindow.scrollY : 0;
   fr.onload = () => fr.contentWindow.scrollTo(0, y);
   fr.src = '/preview?name=' + encodeURIComponent(current) + '&t=' + Date.now();
+  fetch('/email?name=' + encodeURIComponent(current))
+    .then(r => r.ok ? r.text() : null)
+    .then(t => { if (t) lastEmail = t; });
 }
 async function save() {
   if (!current) return;
@@ -890,20 +893,28 @@ function copyRich(html, plain) {
   }
   return ok;
 }
-$('copy').addEventListener('click', async () => {
-  try {
-    if (dirty) { clearTimeout(saveTimer); await save(); }
-    const resp = await fetch('/email?name=' + encodeURIComponent(current));
-    if (!resp.ok) throw new Error('render failed');
-    const html = await resp.text();
-    if (!copyRich(html, $('editor').value)) {
-      await navigator.clipboard.write([new ClipboardItem({
-        'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
-      })]);
-    }
+$('copy').addEventListener('click', () => {
+  // execCommand only works synchronously inside the click stack, so copy
+  // the cached render (kept fresh by refresh()) with no awaits before it
+  const plain = $('editor').value;
+  if (!lastEmail) {
+    setStatus('Nothing rendered yet');
+    return;
+  }
+  if (copyRich(lastEmail, plain)) {
     setStatus('Copied — paste into your mail compose window');
-  } catch (e) { setStatus('Copy failed: ' + e.message); }
+  } else {
+    navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([lastEmail], { type: 'text/html' }),
+      'text/plain': new Blob([plain], { type: 'text/plain' }),
+    })]).then(
+      () => setStatus('Copied (fallback path — styling may degrade)'),
+      e => setStatus('Copy failed: ' + e.message));
+  }
+  if (dirty) {
+    clearTimeout(saveTimer);
+    save().catch(e => setStatus('Save failed: ' + e.message));
+  }
 });
 $('editor').addEventListener('paste', e => {
   for (const item of e.clipboardData.items) {
