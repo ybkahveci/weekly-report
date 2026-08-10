@@ -420,6 +420,115 @@ function scaffold(previous, week) {
   return out.join('\n').replace(/\n+$/, '') + '\n';
 }
 
+/* ------------------------------------------------------------------ history */
+
+function aggregateHistory(files) {
+  /* files: [{name, text}] in chronological (ascending) order */
+  const projects = new Map();
+  for (const f of files) {
+    const rep = parseReport(f.text);
+    const week = rep.meta.week || f.name.replace(/\.md$/, '');
+    for (const p of rep.projects) {
+      if (!projects.has(p.name)) {
+        projects.set(p.name, { name: p.name, total: 0, weeks: [] });
+      }
+      const entry = projects.get(p.name);
+      const days = p.days === null ? 0 : p.days;
+      entry.total += days;
+      const seg = splitBody(p.bodyMd).find(s => s[0] === 'this week');
+      entry.weeks.push({
+        file: f.name, week, days: p.days,
+        thisWeek: seg ? seg[1] : '',
+      });
+    }
+  }
+  const list = [...projects.values()].sort((a, b) => b.total - a.total);
+  const grandTotal = list.reduce((s, p) => s + p.total, 0);
+  return { projects: list, grandTotal, reports: files.length };
+}
+
+function renderTimeline(project) {
+  document.getElementById('tl-title').textContent = `Timeline — ${project.name}`;
+  const tl = document.getElementById('histtl');
+  tl.innerHTML = '';
+  for (const w of project.weeks) {
+    const entry = document.createElement('div');
+    entry.className = 'tlentry';
+    const head = document.createElement('div');
+    const wk = document.createElement('span');
+    wk.className = 'tlweek';
+    wk.textContent = `Week ${w.week}`;
+    const days = document.createElement('span');
+    days.className = 'tldays';
+    days.textContent =
+      `${w.file.replace(/\.md$/, '')} · ` +
+      (w.days !== null ? formatDays(w.days) : '—');
+    head.append(wk, days);
+    const md = document.createElement('div');
+    md.className = 'tlmd';
+    if (w.thisWeek.trim()) {
+      md.innerHTML = marked.parse(w.thisWeek, { breaks: true, gfm: true });
+    } else {
+      md.innerHTML = '<div class="tlnone">no activity recorded</div>';
+    }
+    entry.append(head, md);
+    tl.appendChild(entry);
+  }
+}
+
+async function showHistory() {
+  const names = (await listFiles()).sort();
+  const files = [];
+  for (const n of names) files.push({ name: n, text: await readFile(n) });
+  const hist = aggregateHistory(files);
+
+  document.getElementById('hv-meta').textContent =
+    `${hist.reports} report${hist.reports === 1 ? '' : 's'} · ` +
+    `${hist.grandTotal} days total`;
+
+  const tbody = document.getElementById('hsum-body');
+  tbody.innerHTML = '';
+  const maxTotal = hist.projects.length ? hist.projects[0].total : 0;
+  hist.projects.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    const mk = (cls, text) => {
+      const td = document.createElement('td');
+      td.className = cls;
+      td.textContent = text;
+      return td;
+    };
+    tr.append(
+      mk('hname', p.name),
+      mk('num', String(p.weeks.length)),
+      mk('num', String(p.total)),
+      mk('num', hist.grandTotal
+        ? `${Math.round(100 * p.total / hist.grandTotal)}%` : '—'),
+    );
+    const barTd = document.createElement('td');
+    const track = document.createElement('div');
+    track.className = 'track';
+    const meter = document.createElement('div');
+    meter.className = 'meter';
+    meter.style.width = maxTotal ? `${100 * p.total / maxTotal}%` : '0';
+    track.appendChild(meter);
+    barTd.appendChild(track);
+    tr.appendChild(barTd);
+    tr.onclick = () => {
+      for (const row of tbody.children) row.classList.remove('sel');
+      tr.classList.add('sel');
+      renderTimeline(p);
+    };
+    tbody.appendChild(tr);
+    if (i === 0) tr.onclick();
+  });
+  if (!hist.projects.length) {
+    document.getElementById('tl-title').textContent = 'Timeline';
+    document.getElementById('histtl').innerHTML =
+      '<div class="tlnone">no reports found</div>';
+  }
+  document.getElementById('histview').classList.add('open');
+}
+
 function isoWeek(d) {
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const day = t.getUTCDay() || 7;
@@ -710,7 +819,14 @@ $('folder').addEventListener('click', async () => {
     if (e.name !== 'AbortError') setStatus(e.message);
   }
 });
+$('history').addEventListener('click', () => {
+  showHistory().catch(e => setStatus('History failed: ' + e.message));
+});
+$('hv-close').addEventListener('click', () => {
+  $('histview').classList.remove('open');
+});
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') $('histview').classList.remove('open');
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
     clearTimeout(state.saveTimer);

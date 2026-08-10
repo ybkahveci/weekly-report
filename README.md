@@ -73,6 +73,29 @@ Upcoming:
 - Paste or drag an image into the editor to attach it; fenced code blocks
   get inline syntax highlighting.
 
+## History
+
+The **History** button aggregates every report in the folder: days per
+project (totals, share, meter) and a chronological timeline of each
+project's *This week* entries — useful for quarterly summaries and
+appraisals. Click a project row to see its timeline; Esc closes.
+
+## Sync reports between machines
+
+`weekly-reports/` is git-ignored here; make it its own repo pushed to a
+**private** remote:
+
+```sh
+cd weekly-reports
+git init -b main && git add . && git commit -m "import reports"
+git remote add origin git@github.com:<you>/weekly-reports.git
+git push -u origin main
+```
+
+On the other machine: clone it anywhere and point the web app at that
+folder. Routine: `git pull --rebase` before writing, commit and push
+after.
+
 ## Weekly workflow
 
 The outline sidebar lists projects in order: the arrows (or Alt+Up/Down
