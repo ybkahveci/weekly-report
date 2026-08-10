@@ -1,0 +1,17 @@
+[project]
+name = "weekly-report"
+version = "0.1.0"
+description = "Weekly progress report editor that outputs Outlook-safe HTML email"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0,<4",
+    "markdown>=3.5,<4",
+    "pygments>=2.17,<3",
+    "pillow>=10,<12",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

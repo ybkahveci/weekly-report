@@ -1,0 +1,774 @@
+/*
+ * weekly-report web — static browser port of the weekly report editor.
+ *
+ * Runs entirely client-side (GitHub Pages): Markdown is rendered to
+ * Outlook-safe HTML with marked + highlight.js, and reports are read and
+ * written straight to a local folder via the File System Access API, so no
+ * report content ever leaves the machine. The email markup mirrors app.py:
+ * tables with inline styles on every element, because classic Outlook
+ * renders mail with the Word engine.
+ *
+ * Copyright (c) 2026 Yusuf Bunyamin Kahveci <yusuf.kahveci@tii.ae>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+'use strict';
+
+/* ---------------------------------------------------------------- email CSS */
+
+const MAX_IMG_WIDTH = 480;  /* content column: 640 - 150 name column */
+const TAB_PX = 36;
+
+const FONT = 'Calibri,Arial,Helvetica,sans-serif';
+const MONO = "Consolas,'Courier New',monospace";
+const NAVY = '#1f3864';
+const BORDER = '#d9d9d9';
+const RULE = '#e3e6ea';
+const MUTED = '#7a8699';
+const TD_FONT = `font-family:${FONT};font-size:15px;line-height:1.45;color:#1a1a1a;`;
+const SECTION_LABEL =
+  `font-family:${FONT};font-size:11px;font-weight:bold;letter-spacing:1px;` +
+  `color:${MUTED};`;
+
+const TAG_STYLES = {
+  P: 'margin:0 0 8px 0;',
+  UL: 'margin:2px 0 10px 0;padding:0 0 0 24px;',
+  OL: 'margin:2px 0 10px 0;padding:0 0 0 24px;',
+  LI: 'margin:0 0 3px 0;',
+  BLOCKQUOTE: 'margin:4px 0 10px 0;padding:2px 0 2px 10px;' +
+              'border-left:3px solid #cccccc;color:#555555;',
+  H1: `font-size:17px;margin:12px 0 6px 0;color:${NAVY};`,
+  H2: `font-size:16px;margin:12px 0 6px 0;color:${NAVY};`,
+  H3: `font-size:15px;margin:10px 0 4px 0;color:${NAVY};`,
+  H4: 'font-size:15px;margin:10px 0 4px 0;',
+};
+const A_STYLE = 'color:#1f6fb2;';
+const CODE_INLINE_STYLE =
+  `font-family:${MONO};font-size:13px;background-color:#f5f5f5;padding:0 3px;`;
+
+/* Pygments-default-like colors for highlight.js token classes. */
+const HLJS_COLORS = {
+  'hljs-keyword': 'color:#008000;font-weight:bold;',
+  'hljs-built_in': 'color:#008000;',
+  'hljs-type': 'color:#b00040;',
+  'hljs-literal': 'color:#666666;',
+  'hljs-number': 'color:#666666;',
+  'hljs-string': 'color:#ba2121;',
+  'hljs-comment': 'color:#3d7b7b;font-style:italic;',
+  'hljs-doctag': 'color:#3d7b7b;font-style:italic;',
+  'hljs-meta': 'color:#9c6500;',
+  'hljs-title': 'color:#0000ff;',
+  'hljs-attr': 'color:#008000;',
+  'hljs-symbol': 'color:#19177c;',
+  'hljs-variable': 'color:#19177c;',
+  'hljs-operator': 'color:#666666;',
+  'hljs-params': '',
+};
+
+const LABEL_RE = /^(this week|status|upcoming)\s*:(.*)$/i;
+const LIST_RE = /^\s*(?:[-*+]\s|\d+\.\s)/;
+const HEAD_DAYS_RE = /^(.+?)\s+[—–-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
+
+const esc = s => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/* ------------------------------------------------------------------ parsing */
+
+function parseReport(text) {
+  const meta = {};
+  let body = text;
+  if (text.startsWith('---')) {
+    const end = text.indexOf('\n---', 3);
+    if (end !== -1) {
+      for (const line of text.slice(3, end).trim().split('\n')) {
+        const i = line.indexOf(':');
+        if (i > 0) meta[line.slice(0, i).trim().toLowerCase()] =
+          line.slice(i + 1).trim();
+      }
+      body = text.slice(end + 4);
+    }
+  }
+
+  const raw = [];
+  let current = null;
+  for (const line of body.split('\n')) {
+    if (line.startsWith('## ')) {
+      current = { head: line.slice(3).trim(), lines: [] };
+      raw.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+
+  const report = { meta, projects: [], warnings: [] };
+  for (const item of raw) {
+    const m = item.head.match(HEAD_DAYS_RE);
+    let name, days;
+    if (m) {
+      name = m[1].trim();
+      days = parseFloat(m[2].replace(',', '.'));
+    } else {
+      name = item.head;
+      days = null;
+      report.warnings.push(`No "— N days" found in heading "${item.head}"`);
+    }
+    const lines = item.lines;
+    while (lines.length && !lines[0].trim()) lines.shift();
+    let subtitle = null;
+    if (lines.length && lines[0].trimStart().startsWith('>')) {
+      subtitle = lines.shift().trimStart().slice(1).trim();
+    }
+    report.projects.push({
+      name, days, subtitle,
+      bodyMd: lines.join('\n').replace(/^\n+|\n+$/g, ''),
+    });
+  }
+  return report;
+}
+
+function splitBody(text) {
+  const segments = [];
+  let label = null;
+  let current = [];
+  let inFence = false;
+
+  const flush = () => {
+    const content = current.join('\n').replace(/^\n+|\n+$/g, '');
+    if (content || label !== null) segments.push([label, content]);
+  };
+
+  for (const line of text.split('\n')) {
+    const stripped = line.trim();
+    if (stripped.startsWith('```') || stripped.startsWith('~~~')) {
+      inFence = !inFence;
+    }
+    const m = (inFence || LIST_RE.test(line)) ? null : stripped.match(LABEL_RE);
+    if (m) {
+      flush();
+      label = m[1].toLowerCase();
+      current = m[2].trim() ? [m[2].trim()] : [];
+    } else {
+      current.push(line);
+    }
+  }
+  flush();
+  return segments;
+}
+
+/* ---------------------------------------------------------------- rendering */
+
+function highlightAndHarden(container) {
+  for (const pre of [...container.querySelectorAll('pre')]) {
+    const code = pre.querySelector('code') || pre;
+    const langCls = [...code.classList].find(c => c.startsWith('language-'));
+    const lang = langCls ? langCls.slice(9) : null;
+    if (lang && hljs.getLanguage(lang)) {
+      code.innerHTML = hljs.highlight(code.textContent, { language: lang }).value;
+      for (const span of code.querySelectorAll('span')) {
+        const cls = [...span.classList].find(c => c.startsWith('hljs-'));
+        const style = HLJS_COLORS[cls];
+        if (style) span.setAttribute('style', style);
+        span.removeAttribute('class');
+      }
+    }
+    /* Word ignores white-space CSS: newlines -> <br>, space runs -> &nbsp; */
+    const lines = code.innerHTML.replace(/\n+$/, '').split('\n').map(ln => ln
+      .replace(/^ +/, m => '&nbsp;'.repeat(m.length))
+      .replace(/ {2,}/g, m => '&nbsp;'.repeat(m.length)));
+    pre.outerHTML =
+      '<table cellpadding="0" cellspacing="0" border="0" width="100%"' +
+      ' style="margin:4px 0 10px 0;"><tr>' +
+      `<td bgcolor="#F5F5F5" style="background-color:#f5f5f5;` +
+      `border:1px solid ${BORDER};padding:8px 10px;` +
+      `font-family:${MONO};font-size:13px;line-height:1.4;">` +
+      lines.join('<br>') + '</td></tr></table>';
+  }
+}
+
+function injectStyles(container) {
+  for (const el of container.querySelectorAll('p,ul,ol,li,blockquote,h1,h2,h3,h4')) {
+    el.setAttribute('style', TAG_STYLES[el.tagName]);
+  }
+  for (const a of container.querySelectorAll('a')) a.setAttribute('style', A_STYLE);
+  for (const c of container.querySelectorAll('code')) {
+    if (c.parentElement.tagName !== 'PRE') c.setAttribute('style', CODE_INLINE_STYLE);
+  }
+}
+
+async function readLocalImage(src) {
+  let dir = state.dir;
+  const parts = src.split('/').filter(Boolean);
+  for (const part of parts.slice(0, -1)) {
+    dir = await dir.getDirectoryHandle(part);
+  }
+  return (await dir.getFileHandle(parts[parts.length - 1])).getFile();
+}
+
+function fileDataUri(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function embedImage(file) {
+  if (file.type === 'image/gif') return { uri: await fileDataUri(file), width: null };
+  const bmp = await createImageBitmap(file);
+  if (bmp.width <= MAX_IMG_WIDTH) {
+    return { uri: await fileDataUri(file), width: bmp.width };
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = MAX_IMG_WIDTH;
+  canvas.height = Math.round(bmp.height * MAX_IMG_WIDTH / bmp.width);
+  canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const mime = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+  return { uri: canvas.toDataURL(mime, 0.85), width: MAX_IMG_WIDTH };
+}
+
+async function processImages(container, warnings) {
+  for (const img of [...container.querySelectorAll('img')]) {
+    const src = img.getAttribute('src') || '';
+    const alt = img.getAttribute('alt') || '';
+    if (/^https?:\/\//.test(src)) {
+      warnings.push(`Remote image kept as a link (may be blocked): ${src}`);
+    } else {
+      let uri, width;
+      try {
+        ({ uri, width } = await embedImage(await readLocalImage(src)));
+      } catch {
+        warnings.push(`Image not found: ${src}`);
+        const span = document.createElement('span');
+        span.setAttribute('style', 'color:#b00;');
+        span.textContent = `[missing image: ${src}]`;
+        img.replaceWith(span);
+        continue;
+      }
+      img.setAttribute('src', uri);
+      if (width) img.setAttribute('width', width);
+    }
+    img.setAttribute('alt', alt);
+    img.setAttribute('style',
+      'display:block;max-width:100%;height:auto;border:0;margin:6px 0;');
+  }
+}
+
+async function mdFragment(text, warnings) {
+  const container = document.createElement('div');
+  container.innerHTML = marked.parse(text, { breaks: true, gfm: true });
+  injectStyles(container);
+  highlightAndHarden(container);
+  await processImages(container, warnings);
+  return container.innerHTML;
+}
+
+function italicize(frag) {
+  /* Word does not inherit font-style into list items. */
+  return frag
+    .replaceAll('<p style="', '<p style="font-style:italic;')
+    .replaceAll('<li style="', '<li style="font-style:italic;');
+}
+
+function indent(frag) {
+  /* Spacer-cell table: the only indent the Word engine renders reliably. */
+  if (!frag) return frag;
+  return '<table cellpadding="0" cellspacing="0" border="0" width="100%">' +
+    `<tr><td width="${TAB_PX}" style="font-size:1px;line-height:1px;">` +
+    '&nbsp;</td>' +
+    `<td valign="top" style="${TD_FONT}">${frag}</td></tr></table>`;
+}
+
+async function renderBody(bodyMd, warnings) {
+  if (!bodyMd.trim()) return '';
+  const parts = [];
+  let first = true;
+  for (const [label, content] of splitBody(bodyMd)) {
+    if (label !== null) {
+      const top = first ? '0' : '12px';
+      parts.push(`<p style="${SECTION_LABEL}margin:${top} 0 4px 0;">` +
+        `${label.toUpperCase()}</p>`);
+    }
+    first = false;
+    let frag = content.trim() ? await mdFragment(content, warnings) : '';
+    if (label === 'this week') {
+      frag = italicize(frag);
+    } else if (label === 'status' &&
+               !content.split('\n').some(ln => LIST_RE.test(ln))) {
+      frag = indent(frag);
+    }
+    parts.push(frag);
+  }
+  return parts.join('');
+}
+
+function formatDays(days) {
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+async function renderEmail(report) {
+  const warnings = [...report.warnings];
+  const total = report.projects.reduce((s, p) => s + (p.days ?? 0), 0);
+
+  const declared = report.meta.days;
+  if (declared) {
+    const d = parseFloat(declared.replace(',', '.'));
+    if (Number.isNaN(d)) {
+      warnings.push(`Frontmatter days is not a number: ${declared}`);
+    } else if (Math.abs(d - total) > 1e-9) {
+      warnings.push(`Frontmatter days: ${declared} != sum of project days (${total})`);
+    }
+  }
+
+  const summary = [
+    ['Week', report.meta.week || ''],
+    ['Total working days', String(total)],
+  ];
+  if (report.meta.productivity) summary.push(['Productivity', report.meta.productivity]);
+  const cells = summary.map(([label, value], i) => {
+    const divider = i < summary.length - 1 ? `border-right:1px solid ${RULE};` : '';
+    return `<td bgcolor="#f2f4f8" style="${TD_FONT}background-color:#f2f4f8;` +
+      `padding:10px 22px 10px 14px;${divider}">` +
+      `<div style="${SECTION_LABEL}">${esc(label.toUpperCase())}</div>` +
+      `<div style="font-size:16px;font-weight:bold;color:${NAVY};` +
+      `margin:2px 0 0 0;">${esc(value)}</div></td>`;
+  });
+  const header =
+    '<table width="640" cellpadding="0" cellspacing="0" border="0"' +
+    ` style="margin:0 0 16px 0;border:1px solid ${RULE};">` +
+    `<tr>${cells.join('')}</tr></table>`;
+
+  const cellBorder = `border-bottom:1px solid ${RULE};`;
+  const rows = [
+    `<tr><td colspan="2" bgcolor="${NAVY}" style="${TD_FONT}color:#ffffff;` +
+    'font-weight:bold;font-size:12px;letter-spacing:1px;' +
+    'padding:8px 12px;">PROJECTS</td></tr>',
+  ];
+  for (const p of report.projects) {
+    const subtitle = p.subtitle
+      ? '<div style="font-size:12px;font-weight:normal;font-style:italic;' +
+        `color:${MUTED};margin:4px 0 0 0;">${esc(p.subtitle)}</div>`
+      : '';
+    const daysTxt = p.days !== null ? formatDays(p.days) : '—';
+    const days = `<div style="font-size:12px;font-weight:normal;color:${MUTED};` +
+      `margin:5px 0 0 0;">${daysTxt}</div>`;
+    rows.push(
+      `<tr><td valign="top" width="150" style="${TD_FONT}font-weight:bold;` +
+      `color:${NAVY};padding:14px 10px 10px 12px;${cellBorder}` +
+      `border-right:1px solid ${RULE};">` +
+      `${esc(p.name)}${subtitle}${days}</td>` +
+      `<td valign="top" style="${TD_FONT}padding:14px 12px 10px 14px;` +
+      `${cellBorder}">` +
+      `${await renderBody(p.bodyMd, warnings)}</td></tr>`);
+  }
+
+  const html =
+    '<meta charset="utf-8">' +
+    `<div style="${TD_FONT}">` +
+    '<p style="margin:0 0 8px 0;">Dear all,</p>' +
+    '<p style="margin:0 0 14px 0;">This is my weekly progress report.</p>' +
+    header +
+    '<table width="640" cellpadding="0" cellspacing="0" border="0"' +
+    ' style="border-collapse:collapse;">' + rows.join('') + '</table></div>';
+  return { html, warnings };
+}
+
+/* ----------------------------------------------------------------- scaffold */
+
+function sectionsOf(bodyMd) {
+  const sections = {};
+  let current = null;
+  for (const line of bodyMd.split('\n')) {
+    const m = line.trim().match(LABEL_RE);
+    if (m && !LIST_RE.test(line)) {
+      current = m[1].toLowerCase();
+      sections[current] = [];
+      if (m[2].trim()) sections[current].push(m[2].trim());
+    } else if (current) {
+      sections[current].push(line);
+    }
+  }
+  for (const lines of Object.values(sections)) {
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  }
+  return sections;
+}
+
+function scaffold(previous, week) {
+  const out = ['---', `week: ${week}`, 'productivity:', '---', ''];
+  if (previous === null) {
+    out.push(
+      '## Project name — 0 days', 'This week:', '- ', '',
+      'Status:', '- Ongoing', '', 'Upcoming:', '- ', '',
+      '## Others — 0 days', '- Weekly meeting', '- Weekly report', '');
+    return out.join('\n');
+  }
+  for (const p of parseReport(previous).projects) {
+    out.push(`## ${p.name} — 0 days`);
+    if (p.subtitle) out.push(`> ${p.subtitle}`);
+    out.push('');
+    const sections = sectionsOf(p.bodyMd);
+    if (Object.keys(sections).length) {
+      out.push('This week:', '- ', '');
+      out.push('Status:', ...(sections.status?.length ? sections.status : ['- Ongoing']), '');
+      out.push('Upcoming:', ...(sections.upcoming?.length ? sections.upcoming : ['- ']), '');
+    } else if (p.bodyMd) {
+      out.push(p.bodyMd, '');
+    }
+  }
+  return out.join('\n').replace(/\n+$/, '') + '\n';
+}
+
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const year = t.getUTCFullYear();
+  const start = new Date(Date.UTC(year, 0, 1));
+  return { year, week: Math.ceil(((t - start) / 86400000 + 1) / 7) };
+}
+
+/* --------------------------------------------------------- folder + storage */
+
+const state = { dir: null, current: null, dirty: false, saveTimer: null };
+
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('weekly-report', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const t = db.transaction('kv').objectStore('kv').get(key);
+    t.onsuccess = () => res(t.result);
+    t.onerror = () => rej(t.error);
+  });
+}
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const t = db.transaction('kv', 'readwrite').objectStore('kv').put(value, key);
+    t.onsuccess = () => res();
+    t.onerror = () => rej(t.error);
+  });
+}
+
+async function listFiles() {
+  const names = [];
+  for await (const entry of state.dir.values()) {
+    if (entry.kind === 'file' && entry.name.endsWith('.md')) names.push(entry.name);
+  }
+  return names.sort().reverse();
+}
+async function readFile(name) {
+  return (await (await state.dir.getFileHandle(name)).getFile()).text();
+}
+async function writeFile(name, content) {
+  const fh = await state.dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(content);
+  await w.close();
+}
+async function fileExists(name) {
+  try {
+    await state.dir.getFileHandle(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* ----------------------------------------------------------------------- UI */
+
+const $ = id => document.getElementById(id);
+const setStatus = t => { $('status').textContent = t; };
+
+async function loadList(preferred) {
+  const files = await listFiles();
+  const el = $('file');
+  el.innerHTML = '';
+  for (const f of files) {
+    const o = document.createElement('option');
+    o.value = o.textContent = f;
+    el.appendChild(o);
+  }
+  if (files.length) {
+    state.current = preferred && files.includes(preferred) ? preferred : files[0];
+    el.value = state.current;
+    await openFile(state.current);
+  } else {
+    setStatus('No reports yet — click "New week"');
+  }
+}
+
+async function openFile(name) {
+  state.current = name;
+  $('editor').value = await readFile(name);
+  state.dirty = false;
+  renderOutline();
+  await refresh();
+}
+
+async function refresh() {
+  const report = parseReport($('editor').value);
+  const { html, warnings } = await renderEmail(report);
+  const sizeKb = new Blob([html]).size / 1024;
+  if (sizeKb > 95) {
+    warnings.push('Email exceeds ~100 KB — Gmail may clip the message');
+  }
+  const banner = warnings.map(w =>
+    '<div style="background:#fff8e1;border:1px solid #f0dc9a;color:#6b5d1f;' +
+    'border-radius:4px;padding:7px 12px;margin:0 0 8px 0;' +
+    `font:12.5px system-ui;">${esc(w)}</div>`).join('');
+  const doc =
+    '<!doctype html><html><head><meta charset="utf-8"></head>' +
+    '<body style="margin:0;padding:18px;background:#eef1f5;">' +
+    '<div style="max-width:700px;margin:0 auto;">' + banner +
+    '<div style="color:#8a94a6;font:12px system-ui;text-align:center;' +
+    `margin:0 0 10px 0;">Email size: ${sizeKb.toFixed(0)} KB` +
+    ' — preview approximates Outlook rendering</div>' +
+    '<div style="background:#ffffff;border:1px solid #dce0e6;border-radius:6px;' +
+    `padding:26px 30px;">${html}</div>` +
+    '</div></body></html>';
+  const fr = $('preview');
+  const y = fr.contentWindow ? fr.contentWindow.scrollY : 0;
+  fr.onload = () => fr.contentWindow.scrollTo(0, y);
+  fr.srcdoc = doc;
+}
+
+async function save() {
+  if (!state.current) return;
+  await writeFile(state.current, $('editor').value);
+  state.dirty = false;
+  setStatus('Saved');
+  await refresh();
+}
+
+function scheduleSave() {
+  state.dirty = true;
+  setStatus('…');
+  renderOutline();
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(
+    () => save().catch(e => setStatus('Save failed: ' + e.message)), 600);
+}
+
+/* outline + reorder */
+
+function splitSections(text) {
+  const lines = text.split('\n');
+  const sections = [];
+  let fence = false, cur = null;
+  lines.forEach((ln, i) => {
+    const t = ln.trim();
+    if (t.startsWith('```') || t.startsWith('~~~')) fence = !fence;
+    if (!fence && ln.startsWith('## ')) {
+      if (cur) cur.end = i;
+      cur = { start: i, end: lines.length, name: ln.slice(3).trim() };
+      sections.push(cur);
+    }
+  });
+  return { lines, sections };
+}
+function lineToChar(lines, lineIdx) {
+  let n = 0;
+  for (let i = 0; i < lineIdx; i++) n += lines[i].length + 1;
+  return n;
+}
+function moveSection(idx, dir, focusEditor) {
+  const ed = $('editor');
+  const { lines, sections } = splitSections(ed.value);
+  const j = idx + dir;
+  if (j < 0 || j >= sections.length) return;
+  const lo = sections[Math.min(idx, j)], hi = sections[Math.max(idx, j)];
+  const norm = arr => {
+    const c = [...arr];
+    while (c.length && !c[c.length - 1].trim()) c.pop();
+    c.push('');
+    return c;
+  };
+  const blockLo = norm(lines.slice(lo.start, lo.end));
+  const blockHi = norm(lines.slice(hi.start, hi.end));
+  const assembled = [
+    ...lines.slice(0, lo.start), ...blockHi, ...blockLo, ...lines.slice(hi.end),
+  ];
+  ed.value = assembled.join('\n');
+  const movedLine = dir < 0 ? lo.start : lo.start + blockHi.length;
+  if (focusEditor) {
+    const pos = lineToChar(assembled, movedLine);
+    ed.focus();
+    ed.setSelectionRange(pos, pos);
+  }
+  scheduleSave();
+}
+function jumpTo(startLine) {
+  const ed = $('editor');
+  const { lines } = splitSections(ed.value);
+  const pos = lineToChar(lines, startLine);
+  ed.focus();
+  ed.setSelectionRange(pos, pos);
+  ed.scrollTop = Math.max(0, (startLine / lines.length) * ed.scrollHeight - 40);
+}
+function renderOutline() {
+  const { sections } = splitSections($('editor').value);
+  const el = $('olist');
+  el.innerHTML = '';
+  sections.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'oitem';
+    const name = document.createElement('span');
+    name.textContent = s.name.replace(/\s+[—–-]+\s+\d.*$/, '');
+    name.onclick = () => jumpTo(s.start);
+    const up = document.createElement('button');
+    up.textContent = '↑';
+    up.disabled = i === 0;
+    up.onclick = () => moveSection(i, -1, false);
+    const dn = document.createElement('button');
+    dn.textContent = '↓';
+    dn.disabled = i === sections.length - 1;
+    dn.onclick = () => moveSection(i, 1, false);
+    row.append(name, up, dn);
+    el.appendChild(row);
+  });
+}
+
+/* images */
+
+async function upload(file) {
+  const images = await state.dir.getDirectoryHandle('images', { create: true });
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif' }[file.type];
+  if (!ext) throw new Error(`unsupported image type: ${file.type}`);
+  let name = `img-${stamp}${ext}`;
+  let counter = 1;
+  while (await images.getFileHandle(name).then(() => true, () => false)) {
+    name = `img-${stamp}-${counter++}${ext}`;
+  }
+  const fh = await images.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(file);
+  await w.close();
+  const ed = $('editor');
+  ed.setRangeText(`![](images/${name})\n`, ed.selectionStart, ed.selectionEnd, 'end');
+  scheduleSave();
+}
+
+/* folder gate */
+
+async function start(dir) {
+  state.dir = dir;
+  $('gate').style.display = 'none';
+  await loadList();
+}
+
+async function init() {
+  if (!window.showDirectoryPicker) {
+    $('open-folder').disabled = true;
+    $('gate-err').textContent =
+      'This browser has no File System Access API — use Chrome or Edge.';
+    return;
+  }
+  const stored = await idbGet('dir').catch(() => null);
+  if (stored) {
+    const btn = $('reopen-folder');
+    btn.hidden = false;
+    btn.textContent = `Reopen "${stored.name}"`;
+    btn.onclick = async () => {
+      try {
+        const perm = await stored.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') await start(stored);
+        else $('gate-err').textContent = 'Permission denied.';
+      } catch (e) { $('gate-err').textContent = e.message; }
+    };
+  }
+  $('open-folder').onclick = async () => {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await idbSet('dir', dir);
+      await start(dir);
+    } catch (e) {
+      if (e.name !== 'AbortError') $('gate-err').textContent = e.message;
+    }
+  };
+}
+
+/* event wiring */
+
+$('editor').addEventListener('input', scheduleSave);
+$('file').addEventListener('change', e => openFile(e.target.value));
+$('folder').addEventListener('click', async () => {
+  try {
+    const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await idbSet('dir', dir);
+    await start(dir);
+  } catch (e) {
+    if (e.name !== 'AbortError') setStatus(e.message);
+  }
+});
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    clearTimeout(state.saveTimer);
+    save().catch(err => setStatus('Save failed: ' + err.message));
+  }
+  if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const ed = $('editor');
+    if (document.activeElement !== ed) return;
+    const { sections } = splitSections(ed.value);
+    const line = ed.value.slice(0, ed.selectionStart).split('\n').length - 1;
+    const idx = sections.findIndex(s => line >= s.start && line < s.end);
+    if (idx >= 0) {
+      e.preventDefault();
+      moveSection(idx, e.key === 'ArrowUp' ? -1 : 1, true);
+    }
+  }
+});
+$('new').addEventListener('click', async () => {
+  try {
+    const { year, week } = isoWeek(new Date());
+    const name = `${year}-W${String(week).padStart(2, '0')}.md`;
+    if (await fileExists(name)) {
+      alert(`${name} already exists`);
+      return;
+    }
+    const files = await listFiles();
+    const previous = files.length ? await readFile(files[0]) : null;
+    await writeFile(name, scaffold(previous, week));
+    await loadList(name);
+  } catch (e) { alert(e.message); }
+});
+$('copy').addEventListener('click', async () => {
+  try {
+    if (state.dirty) { clearTimeout(state.saveTimer); await save(); }
+    const htmlPromise = renderEmail(parseReport($('editor').value))
+      .then(({ html }) => new Blob([html], { type: 'text/html' }));
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': htmlPromise,
+      'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
+    })]);
+    setStatus('Copied — paste into your mail compose window');
+  } catch (e) { setStatus('Copy failed: ' + e.message); }
+});
+$('editor').addEventListener('paste', e => {
+  for (const item of e.clipboardData.items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      upload(item.getAsFile()).catch(err => setStatus('Upload failed: ' + err.message));
+      return;
+    }
+  }
+});
+$('editor').addEventListener('drop', e => {
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f) {
+    e.preventDefault();
+    upload(f).catch(err => setStatus('Upload failed: ' + err.message));
+  }
+});
+
+init().catch(e => { $('gate-err').textContent = e.message; });
