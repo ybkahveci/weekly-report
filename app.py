@@ -198,13 +198,32 @@ def split_body(text: str) -> list[tuple[str | None, str]]:
     return segments
 
 
+SPAN_STYLE_RE = re.compile(r'<span style="([^"]*)">(.*?)</span>', re.DOTALL)
+
+
+def _legacy_span(match: re.Match) -> str:
+    """Pygments token span -> font/b/i, which survive an Outlook paste
+    where inline CSS colors do not."""
+    style, inner = match.group(1), match.group(2)
+    prefix, suffix = "", ""
+    color = re.search(r"color:\s*(#[0-9a-fA-F]{6})", style)
+    if color:
+        prefix, suffix = f'<font color="{color.group(1).lower()}">', "</font>"
+    if "bold" in style:
+        prefix, suffix = prefix + "<b>", "</b>" + suffix
+    if "italic" in style:
+        prefix, suffix = prefix + "<i>", "</i>" + suffix
+    return f"{prefix}{inner}{suffix}"
+
+
 def harden_code_blocks(html: str) -> str:
     """Word ignores white-space CSS, so newlines become <br> and space runs
     become &nbsp; to keep code formatting intact."""
 
     def repl(match: re.Match) -> str:
+        code_html = SPAN_STYLE_RE.sub(_legacy_span, match.group(1))
         lines = []
-        for line in match.group(1).strip("\n").split("\n"):
+        for line in code_html.strip("\n").split("\n"):
             line = re.sub(r"^ +", lambda m: "&nbsp;" * len(m.group()), line)
             line = re.sub(r"  +", lambda m: "&nbsp;" * len(m.group()), line)
             lines.append(line)
@@ -307,10 +326,12 @@ def _md_fragment(text: str, embed: bool, warnings: list[str]) -> str:
 
 
 def _italicize(frag: str) -> str:
-    """Word does not inherit font-style into list items, so inject it on
-    every block element instead of wrapping the fragment."""
+    """Both CSS and legacy <i>: Outlook drops font-style on paste, and Word
+    does not inherit font-style into list items either."""
     frag = frag.replace('<p style="', '<p style="font-style:italic;')
-    return frag.replace('<li style="', '<li style="font-style:italic;')
+    frag = frag.replace('<li style="', '<li style="font-style:italic;')
+    frag = re.sub(r'(<(?:p|li) style="[^"]*">)', r"\1<i>", frag)
+    return re.sub(r"</(p|li)>", r"</i></\1>", frag)
 
 
 def _indent(frag: str) -> str:
@@ -334,7 +355,8 @@ def render_body(body_md: str, embed: bool, warnings: list[str]) -> str:
         if label is not None:
             top = "0" if first else "12px"
             parts.append(
-                f'<p style="{SECTION_LABEL}margin:{top} 0 4px 0;">{label.upper()}</p>'
+                f'<p style="{SECTION_LABEL}margin:{top} 0 4px 0;">'
+                f'<b><font color="{MUTED}">{label.upper()}</font></b></p>'
             )
         first = False
         frag = _md_fragment(content, embed, warnings) if content.strip() else ""
@@ -380,9 +402,11 @@ def render_email(report: Report, embed: bool) -> tuple[str, list[str]]:
         cells.append(
             f'<td bgcolor="#f2f4f8" style="{TD_FONT}background-color:#f2f4f8;'
             f'padding:10px 22px 10px 14px;{divider}">'
-            f'<div style="{SECTION_LABEL}">{escape(label.upper())}</div>'
+            f'<div style="{SECTION_LABEL}">'
+            f'<b><font color="{MUTED}">{escape(label.upper())}</font></b></div>'
             f'<div style="font-size:16px;font-weight:bold;color:{NAVY};'
-            f'margin:2px 0 0 0;">{escape(value)}</div></td>'
+            f'margin:2px 0 0 0;">'
+            f'<b><font color="{NAVY}">{escape(value)}</font></b></div></td>'
         )
     header = (
         '<table width="640" cellpadding="0" cellspacing="0" border="0"'
@@ -394,25 +418,27 @@ def render_email(report: Report, embed: bool) -> tuple[str, list[str]]:
     rows = [
         f'<tr><td colspan="2" bgcolor="{NAVY}" style="{TD_FONT}color:#ffffff;'
         "font-weight:bold;font-size:12px;letter-spacing:1px;"
-        'padding:8px 12px;">PROJECTS</td></tr>'
+        'padding:8px 12px;"><b><font color="#ffffff">PROJECTS</font></b></td></tr>'
     ]
     for p in report.projects:
         subtitle = (
             '<div style="font-size:12px;font-weight:normal;font-style:italic;'
-            f'color:{MUTED};margin:4px 0 0 0;">{escape(p.subtitle)}</div>'
+            f'color:{MUTED};margin:4px 0 0 0;">'
+            f'<i><font color="{MUTED}">{escape(p.subtitle)}</font></i></div>'
             if p.subtitle
             else ""
         )
         days_txt = format_days(p.days) if p.days is not None else "—"
         days = (
             f'<div style="font-size:12px;font-weight:normal;color:{MUTED};'
-            f'margin:5px 0 0 0;">{days_txt}</div>'
+            f'margin:5px 0 0 0;"><font color="{MUTED}">{days_txt}</font></div>'
         )
         rows.append(
             f'<tr><td valign="top" width="150" style="{TD_FONT}font-weight:bold;'
             f"color:{NAVY};padding:14px 10px 10px 12px;{cell_border}"
             f'border-right:1px solid {RULE};">'
-            f"{escape(p.name)}{subtitle}{days}</td>"
+            f'<b><font color="{NAVY}">{escape(p.name)}</font></b>'
+            f"{subtitle}{days}</td>"
             f'<td valign="top" style="{TD_FONT}padding:14px 12px 10px 14px;'
             f'{cell_border}">'
             f"{render_body(p.body_md, embed, warnings)}</td></tr>"
@@ -838,17 +864,44 @@ $('new').addEventListener('click', async () => {
     await loadList(name);
   } catch (e) { alert(e.message); }
 });
+function copyRich(html, plain) {
+  // copy-event path writes the payload verbatim; the async clipboard API
+  // sanitizes text/html and strips inline styles that Outlook needs
+  let ok = false;
+  const listener = e => {
+    e.clipboardData.setData('text/html', html);
+    e.clipboardData.setData('text/plain', plain);
+    e.preventDefault();
+    ok = true;
+  };
+  const ta = document.createElement('textarea');
+  ta.value = ' ';
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.addEventListener('copy', listener);
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.removeEventListener('copy', listener);
+    document.body.removeChild(ta);
+    $('editor').focus();
+  }
+  return ok;
+}
 $('copy').addEventListener('click', async () => {
   try {
     if (dirty) { clearTimeout(saveTimer); await save(); }
-    const blob = fetch('/email?name=' + encodeURIComponent(current)).then(r => {
-      if (!r.ok) throw new Error('render failed');
-      return r.blob();
-    });
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/html': blob,
-      'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
-    })]);
+    const resp = await fetch('/email?name=' + encodeURIComponent(current));
+    if (!resp.ok) throw new Error('render failed');
+    const html = await resp.text();
+    if (!copyRich(html, $('editor').value)) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
+      })]);
+    }
     setStatus('Copied — paste into your mail compose window');
   } catch (e) { setStatus('Copy failed: ' + e.message); }
 });

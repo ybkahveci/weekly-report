@@ -165,11 +165,20 @@ function highlightAndHarden(container) {
     const lang = langCls ? langCls.slice(9) : null;
     if (lang && hljs.getLanguage(lang)) {
       code.innerHTML = hljs.highlight(code.textContent, { language: lang }).value;
-      for (const span of code.querySelectorAll('span')) {
+      /* legacy font/b/i tags: Word drops CSS colors on paste but honors these;
+         reversed order processes children before their parent is serialized */
+      for (const span of [...code.querySelectorAll('span')].reverse()) {
         const cls = [...span.classList].find(c => c.startsWith('hljs-'));
-        const style = HLJS_COLORS[cls];
-        if (style) span.setAttribute('style', style);
-        span.removeAttribute('class');
+        const spec = HLJS_COLORS[cls];
+        if (!spec) {
+          span.replaceWith(...span.childNodes);
+          continue;
+        }
+        let inner = span.innerHTML;
+        if (spec.includes('font-style:italic')) inner = `<i>${inner}</i>`;
+        if (spec.includes('font-weight:bold')) inner = `<b>${inner}</b>`;
+        const color = spec.match(/color:(#[0-9a-f]{6})/);
+        span.outerHTML = color ? `<font color="${color[1]}">${inner}</font>` : inner;
       }
     }
     /* Word ignores white-space CSS: newlines -> <br>, space runs -> &nbsp; */
@@ -265,10 +274,12 @@ async function mdFragment(text, warnings) {
 }
 
 function italicize(frag) {
-  /* Word does not inherit font-style into list items. */
+  /* Both CSS and legacy <i>: Word drops font-style on paste. */
   return frag
     .replaceAll('<p style="', '<p style="font-style:italic;')
-    .replaceAll('<li style="', '<li style="font-style:italic;');
+    .replaceAll('<li style="', '<li style="font-style:italic;')
+    .replace(/(<(?:p|li) style="[^"]*">)/g, '$1<i>')
+    .replace(/<\/(p|li)>/g, '</i></$1>');
 }
 
 function indent(frag) {
@@ -288,7 +299,7 @@ async function renderBody(bodyMd, warnings) {
     if (label !== null) {
       const top = first ? '0' : '12px';
       parts.push(`<p style="${SECTION_LABEL}margin:${top} 0 4px 0;">` +
-        `${label.toUpperCase()}</p>`);
+        `<b><font color="${MUTED}">${label.toUpperCase()}</font></b></p>`);
     }
     first = false;
     let frag = content.trim() ? await mdFragment(content, warnings) : '';
@@ -330,9 +341,11 @@ async function renderEmail(report) {
     const divider = i < summary.length - 1 ? `border-right:1px solid ${RULE};` : '';
     return `<td bgcolor="#f2f4f8" style="${TD_FONT}background-color:#f2f4f8;` +
       `padding:10px 22px 10px 14px;${divider}">` +
-      `<div style="${SECTION_LABEL}">${esc(label.toUpperCase())}</div>` +
+      `<div style="${SECTION_LABEL}">` +
+      `<b><font color="${MUTED}">${esc(label.toUpperCase())}</font></b></div>` +
       `<div style="font-size:16px;font-weight:bold;color:${NAVY};` +
-      `margin:2px 0 0 0;">${esc(value)}</div></td>`;
+      `margin:2px 0 0 0;"><b><font color="${NAVY}">${esc(value)}</font></b>` +
+      '</div></td>';
   });
   const header =
     '<table width="640" cellpadding="0" cellspacing="0" border="0"' +
@@ -343,21 +356,22 @@ async function renderEmail(report) {
   const rows = [
     `<tr><td colspan="2" bgcolor="${NAVY}" style="${TD_FONT}color:#ffffff;` +
     'font-weight:bold;font-size:12px;letter-spacing:1px;' +
-    'padding:8px 12px;">PROJECTS</td></tr>',
+    'padding:8px 12px;"><b><font color="#ffffff">PROJECTS</font></b></td></tr>',
   ];
   for (const p of report.projects) {
     const subtitle = p.subtitle
       ? '<div style="font-size:12px;font-weight:normal;font-style:italic;' +
-        `color:${MUTED};margin:4px 0 0 0;">${esc(p.subtitle)}</div>`
+        `color:${MUTED};margin:4px 0 0 0;">` +
+        `<i><font color="${MUTED}">${esc(p.subtitle)}</font></i></div>`
       : '';
     const daysTxt = p.days !== null ? formatDays(p.days) : '—';
     const days = `<div style="font-size:12px;font-weight:normal;color:${MUTED};` +
-      `margin:5px 0 0 0;">${daysTxt}</div>`;
+      `margin:5px 0 0 0;"><font color="${MUTED}">${daysTxt}</font></div>`;
     rows.push(
       `<tr><td valign="top" width="150" style="${TD_FONT}font-weight:bold;` +
       `color:${NAVY};padding:14px 10px 10px 12px;${cellBorder}` +
       `border-right:1px solid ${RULE};">` +
-      `${esc(p.name)}${subtitle}${days}</td>` +
+      `<b><font color="${NAVY}">${esc(p.name)}</font></b>${subtitle}${days}</td>` +
       `<td valign="top" style="${TD_FONT}padding:14px 12px 10px 14px;` +
       `${cellBorder}">` +
       `${await renderBody(p.bodyMd, warnings)}</td></tr>`);
@@ -858,15 +872,43 @@ $('new').addEventListener('click', async () => {
     await loadList(name);
   } catch (e) { alert(e.message); }
 });
+function copyRich(html, plain) {
+  /* copy-event path writes the payload verbatim; the async clipboard API
+     sanitizes text/html and strips inline styles that Outlook needs */
+  let ok = false;
+  const listener = e => {
+    e.clipboardData.setData('text/html', html);
+    e.clipboardData.setData('text/plain', plain);
+    e.preventDefault();
+    ok = true;
+  };
+  const ta = document.createElement('textarea');
+  ta.value = ' ';
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.addEventListener('copy', listener);
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.removeEventListener('copy', listener);
+    document.body.removeChild(ta);
+    $('editor').focus();
+  }
+  return ok;
+}
+
 $('copy').addEventListener('click', async () => {
   try {
     if (state.dirty) { clearTimeout(state.saveTimer); await save(); }
-    const htmlPromise = renderEmail(parseReport($('editor').value))
-      .then(({ html }) => new Blob([html], { type: 'text/html' }));
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/html': htmlPromise,
-      'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
-    })]);
+    const { html } = await renderEmail(parseReport($('editor').value));
+    if (!copyRich(html, $('editor').value)) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([$('editor').value], { type: 'text/plain' }),
+      })]);
+    }
     setStatus('Copied — paste into your mail compose window');
   } catch (e) { setStatus('Copy failed: ' + e.message); }
 });
