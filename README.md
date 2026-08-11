@@ -98,8 +98,11 @@ after.
 
 ## Weekly workflow
 
-The outline sidebar lists projects in order: the arrows (or Alt+Up/Down
-inside the editor) move a project, clicking a name jumps to it.
+The outline sidebar lists projects in order with their day counts and a
+live total: the arrows (or Alt+Up/Down inside the editor) move a project,
+clicking a name jumps to it. The web editor continues bullet lists on
+Enter, indents with Tab/Shift+Tab, and bolds/italicizes with Ctrl+B/I —
+press `?` (or the ? button) for the full shortcut list.
 
 **New week** scaffolds the next report from the latest one: projects and
 subtitles carry over, each project's *Status* and *Upcoming* are kept,

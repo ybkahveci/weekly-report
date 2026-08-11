@@ -35,11 +35,34 @@ main { flex: 1; display: flex; min-height: 0; }
                 cursor: pointer; padding: 0 5px; font-size: 11px; color: #4a5568; }
 .oitem button:hover { border-color: #2d6cdf; color: #2d6cdf; }
 .oitem button:disabled { opacity: .3; cursor: default; }
+.odays { color: #7a8699; font-size: 11px; margin-right: 2px;
+         white-space: nowrap; }
+.obadge { color: #b45309; font-weight: 700; font-size: 11px; margin-right: 2px;
+          cursor: help; }
+#ototal { padding: 8px 12px 0; margin-top: 6px; font-size: 11.5px;
+          font-weight: 600; color: #4a5568; border-top: 1px solid #e3e6ea; }
+#dirty { color: #e6a23c; font-size: 10px; }
 #editor { flex: 1; border: none; outline: none; resize: none; padding: 16px;
           font: 13px/1.55 Consolas, monospace; background: #fdfdfd;
           color: #24292f; }
-#preview { flex: 1; border: none; border-left: 1px solid #dfe3e8;
-           background: #eef1f5; }
+#split { width: 5px; cursor: col-resize; background: #dfe3e8; flex: none; }
+#split:hover { background: #2d6cdf; }
+#preview { flex: 1; border: none; background: #eef1f5; }
+#copy.ok { background: #1f9d55; border-color: #1f9d55; }
+#helpview { position: fixed; inset: 0; background: rgba(20,24,30,.45);
+            display: none; align-items: center; justify-content: center;
+            z-index: 30; }
+#helpview.open { display: flex; }
+.help-card { background: #fff; border-radius: 8px; padding: 22px 26px;
+             min-width: 340px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+.help-card h3 { margin: 0 0 12px; font-size: 15px; color: #1f3864; }
+.help-card table { border-collapse: collapse; font-size: 13px; }
+.help-card td { padding: 4px 10px 4px 0; color: #2a3342; }
+kbd { background: #f3f4f6; border: 1px solid #d3d8df; border-bottom-width: 2px;
+      border-radius: 4px; padding: 1px 6px;
+      font: 11.5px Consolas, monospace; }
+.help-hint { margin-top: 12px; font-size: 12px; color: #7a8699;
+             max-width: 340px; }
 #gate { position: fixed; inset: 0; background: #eef1f5; display: flex;
         align-items: center; justify-content: center; z-index: 10; }
 #histview { position: fixed; inset: 0; background: #eef1f5; z-index: 20;
@@ -96,10 +119,12 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   <span class="brand">Weekly Report <small id="appver"
     style="opacity:.55;font-size:11px;font-weight:400;"></small></span>
   <select id="file"></select>
+  <span id="dirty" hidden title="Unsaved changes">●</span>
   <button id="new">New week</button>
   <button id="history">History</button>
   <button id="folder" title="Switch reports folder">Folder…</button>
   <button id="spell" title="Toggle spell checking (English)"></button>
+  <button id="help" title="Keyboard shortcuts (?)">?</button>
   <span id="status"></span>
   <span class="grow"></span>
   <button id="copy">Copy email</button>
@@ -109,10 +134,31 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
          title="Project order — arrows move, Alt+Up/Down in the editor">
     <div class="ohead">Projects</div>
     <div id="olist"></div>
+    <div id="ototal"></div>
   </aside>
   <textarea id="editor" spellcheck="true" lang="en"></textarea>
+  <div id="split" title="Drag to resize — double-click to hide the preview"></div>
   <iframe id="preview"></iframe>
 </main>
+<div id="helpview">
+  <div class="help-card">
+    <h3>Keyboard shortcuts</h3>
+    <table>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save now</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Continue bullet / numbered list</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td>
+          <td>Indent / outdent line(s)</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td>
+          <td>Bold / italic selection</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd></td>
+          <td>Move project up / down</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close panels</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This help (outside the editor)</td></tr>
+    </table>
+    <div class="help-hint">Drag the divider to resize the panes;
+      double-click it to hide or show the preview.</div>
+  </div>
+</div>
 <div id="histview">
   <div class="hv-head">
     <span class="brand">History</span>
@@ -148,6 +194,6 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

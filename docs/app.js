@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -637,6 +637,7 @@ async function openFile(name) {
   state.current = name;
   $('editor').value = await readFile(name);
   state.dirty = false;
+  $('dirty').hidden = true;
   renderOutline();
   await refresh();
 }
@@ -673,12 +674,14 @@ async function save() {
   if (!state.current) return;
   await writeFile(state.current, $('editor').value);
   state.dirty = false;
+  $('dirty').hidden = true;
   setStatus('Saved');
   await refresh();
 }
 
 function scheduleSave() {
   state.dirty = true;
+  $('dirty').hidden = false;
   setStatus('…');
   renderOutline();
   clearTimeout(state.saveTimer);
@@ -746,12 +749,27 @@ function renderOutline() {
   const { sections } = splitSections($('editor').value);
   const el = $('olist');
   el.innerHTML = '';
+  let total = 0;
+  let allParsed = true;
   sections.forEach((s, i) => {
     const row = document.createElement('div');
     row.className = 'oitem';
     const name = document.createElement('span');
     name.textContent = s.name.replace(/\s+[—–-]+\s+\d.*$/, '');
     name.onclick = () => jumpTo(s.start);
+    const days = document.createElement('span');
+    const m = s.name.match(HEAD_DAYS_RE);
+    if (m) {
+      const d = parseFloat(m[2].replace(',', '.'));
+      total += d;
+      days.className = 'odays';
+      days.textContent = d + 'd';
+    } else {
+      allParsed = false;
+      days.className = 'obadge';
+      days.textContent = '!';
+      days.title = 'No "— N days" in this heading';
+    }
     const up = document.createElement('button');
     up.textContent = '↑';
     up.disabled = i === 0;
@@ -760,9 +778,78 @@ function renderOutline() {
     dn.textContent = '↓';
     dn.disabled = i === sections.length - 1;
     dn.onclick = () => moveSection(i, 1, false);
-    row.append(name, up, dn);
+    row.append(name, days, up, dn);
     el.appendChild(row);
   });
+  $('ototal').textContent = sections.length
+    ? `Total: ${total} ${total === 1 ? 'day' : 'days'}` +
+      (allParsed ? '' : ' (incomplete)')
+    : '';
+}
+
+/* editor keybindings */
+
+function indentSelection(ed, dir) {
+  const start = ed.value.lastIndexOf('\n', ed.selectionStart - 1) + 1;
+  let end = ed.value.indexOf('\n', ed.selectionEnd);
+  if (end === -1) end = ed.value.length;
+  const block = ed.value.slice(start, end);
+  const out = block.split('\n').map(ln =>
+    dir > 0 ? '    ' + ln : ln.replace(/^ {1,4}/, '')).join('\n');
+  ed.setRangeText(out, start, end, 'select');
+}
+
+function wrapSelection(ed, mark) {
+  const s = ed.selectionStart;
+  const e = ed.selectionEnd;
+  const sel = ed.value.slice(s, e);
+  if (sel.startsWith(mark) && sel.endsWith(mark) &&
+      sel.length >= 2 * mark.length) {
+    ed.setRangeText(sel.slice(mark.length, sel.length - mark.length),
+      s, e, 'select');
+    return;
+  }
+  ed.setRangeText(mark + sel + mark, s, e, 'select');
+  if (sel) {
+    ed.setSelectionRange(s, e + 2 * mark.length);
+  } else {
+    ed.setSelectionRange(s + mark.length, s + mark.length);
+  }
+}
+
+function editorKeydown(e) {
+  const ed = e.target;
+  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      !e.shiftKey && ed.selectionStart === ed.selectionEnd) {
+    const pos = ed.selectionStart;
+    const lineStart = ed.value.lastIndexOf('\n', pos - 1) + 1;
+    const m = ed.value.slice(lineStart, pos)
+      .match(/^(\s*)([-*+]|\d+[.)])\s(.*)$/);
+    if (m) {
+      e.preventDefault();
+      if (!m[3].trim()) {
+        ed.setRangeText('', lineStart, pos, 'start');   /* end the list */
+      } else {
+        const num = m[2].match(/^(\d+)([.)])$/);
+        const marker = num ? `${Number(num[1]) + 1}${num[2]}` : m[2];
+        ed.setRangeText(`\n${m[1]}${marker} `, pos, pos, 'end');
+      }
+      scheduleSave();
+      return;
+    }
+    return;
+  }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    indentSelection(ed, e.shiftKey ? -1 : 1);
+    scheduleSave();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i')) {
+    e.preventDefault();
+    wrapSelection(ed, e.key === 'b' ? '**' : '*');
+    scheduleSave();
+  }
 }
 
 /* images */
@@ -828,7 +915,49 @@ async function init() {
 /* event wiring */
 
 $('editor').addEventListener('input', scheduleSave);
+$('editor').addEventListener('keydown', editorKeydown);
 $('file').addEventListener('change', e => openFile(e.target.value));
+
+/* pane layout: drag #split to resize, double-click to hide the preview */
+function applyLayout() {
+  const px = localStorage.getItem('splitpx');
+  const hidden = localStorage.getItem('previewhidden') === '1';
+  $('preview').style.display = hidden ? 'none' : '';
+  $('editor').style.flex = !hidden && px ? `0 0 ${px}px` : '1 1 auto';
+}
+$('split').addEventListener('dblclick', () => {
+  localStorage.setItem('previewhidden',
+    localStorage.getItem('previewhidden') === '1' ? '' : '1');
+  applyLayout();
+});
+$('split').addEventListener('mousedown', e => {
+  e.preventDefault();
+  $('preview').style.pointerEvents = 'none';
+  const move = ev => {
+    const left = $('editor').getBoundingClientRect().left;
+    localStorage.setItem('splitpx', String(Math.max(240, ev.clientX - left)));
+    localStorage.setItem('previewhidden', '');
+    applyLayout();
+  };
+  const up = () => {
+    $('preview').style.pointerEvents = '';
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+});
+applyLayout();
+
+$('help').addEventListener('click', () => {
+  $('helpview').classList.toggle('open');
+});
+window.addEventListener('beforeunload', e => {
+  if (state.dirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 $('folder').addEventListener('click', async () => {
   try {
     const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -845,7 +974,13 @@ $('hv-close').addEventListener('click', () => {
   $('histview').classList.remove('open');
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') $('histview').classList.remove('open');
+  if (e.key === 'Escape') {
+    $('histview').classList.remove('open');
+    $('helpview').classList.remove('open');
+  }
+  if (e.key === '?' && document.activeElement !== $('editor')) {
+    $('helpview').classList.toggle('open');
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
     clearTimeout(state.saveTimer);
@@ -875,8 +1010,25 @@ $('new').addEventListener('click', async () => {
     const previous = files.length ? await readFile(files[0]) : null;
     await writeFile(name, scaffold(previous, week));
     await loadList(name);
+    const ed = $('editor');
+    const marker = 'This week:\n- ';
+    const at = ed.value.indexOf(marker);
+    if (at >= 0) {
+      ed.focus();
+      ed.setSelectionRange(at + marker.length, at + marker.length);
+    }
   } catch (e) { alert(e.message); }
 });
+function flashCopied() {
+  const b = $('copy');
+  b.classList.add('ok');
+  b.textContent = 'Copied ✓';
+  setTimeout(() => {
+    b.classList.remove('ok');
+    b.textContent = 'Copy email';
+  }, 1500);
+}
+
 function copyRich(html, plain) {
   /* copy-event path writes the payload verbatim; the async clipboard API
      sanitizes text/html and strips inline styles that Outlook needs */
@@ -915,12 +1067,13 @@ $('copy').addEventListener('click', () => {
   }
   if (copyRich(html, plain)) {
     setStatus('Copied — paste into your mail compose window');
+    flashCopied();
   } else {
     navigator.clipboard.write([new ClipboardItem({
       'text/html': new Blob([html], { type: 'text/html' }),
       'text/plain': new Blob([plain], { type: 'text/plain' }),
     })]).then(
-      () => setStatus('Copied (fallback path — styling may degrade)'),
+      () => { setStatus('Copied (fallback path — styling may degrade)'); flashCopied(); },
       e => setStatus('Copy failed: ' + e.message));
   }
   if (state.dirty) {
