@@ -14,11 +14,11 @@
 
 'use strict';
 
-const APP_VERSION = 'v7';
+const APP_VERSION = 'v8';
 
 /* ---------------------------------------------------------------- email CSS */
 
-const MAX_IMG_WIDTH = 480;  /* content column: 640 - 150 name column */
+const MAX_IMG_WIDTH = 600;  /* full-width layout: 640 minus content padding */
 const TAB_PX = 36;
 
 const FONT = 'Calibri,Arial,Helvetica,sans-serif';
@@ -354,28 +354,35 @@ async function renderEmail(report) {
     ` style="margin:0 0 16px 0;border:1px solid ${RULE};">` +
     `<tr>${cells.join('')}</tr></table>`;
 
-  const cellBorder = `border-bottom:1px solid ${RULE};`;
   const rows = [
-    `<tr><td colspan="2" bgcolor="${NAVY}" style="${TD_FONT}color:#ffffff;` +
+    `<tr><td bgcolor="${NAVY}" style="${TD_FONT}color:#ffffff;` +
     'font-weight:bold;font-size:12px;letter-spacing:1px;' +
     'padding:8px 12px;"><b><font color="#ffffff">PROJECTS</font></b></td></tr>',
   ];
   for (const p of report.projects) {
     const subtitle = p.subtitle
       ? '<div style="font-size:12px;font-weight:normal;font-style:italic;' +
-        `color:${MUTED};margin:4px 0 0 0;">` +
+        `color:${MUTED};margin:2px 0 0 0;">` +
         `<i><font color="${MUTED}">${esc(p.subtitle)}</font></i></div>`
       : '';
     const daysTxt = p.days !== null ? formatDays(p.days) : '—';
-    const days = `<div style="font-size:12px;font-weight:normal;color:${MUTED};` +
-      `margin:5px 0 0 0;"><font color="${MUTED}">${daysTxt}</font></div>`;
+    const chip =
+      '<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>' +
+      '<td bgcolor="#ffffff" style="background-color:#ffffff;' +
+      `border:1px solid ${RULE};border-radius:10px;padding:2px 10px;` +
+      `font-family:${FONT};font-size:12px;color:${MUTED};white-space:nowrap;">` +
+      `<font color="${MUTED}">${daysTxt}</font></td></tr></table>`;
     rows.push(
-      `<tr><td valign="top" width="150" style="${TD_FONT}font-weight:bold;` +
-      `color:${NAVY};padding:14px 10px 10px 12px;${cellBorder}` +
-      `border-right:1px solid ${RULE};">` +
-      `<b><font color="${NAVY}">${esc(p.name)}</font></b>${subtitle}${days}</td>` +
-      `<td valign="top" style="${TD_FONT}padding:14px 12px 10px 14px;` +
-      `${cellBorder}">` +
+      '<tr><td bgcolor="#f2f4f8" style="background-color:#f2f4f8;' +
+      `border-left:3px solid ${NAVY};padding:0;">` +
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+      `<td style="${TD_FONT}font-size:16px;font-weight:bold;color:${NAVY};` +
+      'padding:9px 12px;">' +
+      `<b><font color="${NAVY}">${esc(p.name)}</font></b>${subtitle}</td>` +
+      `<td align="right" valign="middle" style="${TD_FONT}padding:9px 12px;">` +
+      `${chip}</td></tr></table></td></tr>`);
+    rows.push(
+      `<tr><td style="${TD_FONT}padding:12px 12px 18px 15px;">` +
       `${await renderBody(p.bodyMd, warnings)}</td></tr>`);
   }
 

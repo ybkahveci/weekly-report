@@ -32,8 +32,8 @@ except ImportError:
 
 REPORTS_DIR = Path(__file__).resolve().parent / "weekly-reports"
 
-# Content column is 640 - 150 (name column) = 490 px wide.
-MAX_IMG_WIDTH = 480
+# Full-width layout: 640 minus content padding.
+MAX_IMG_WIDTH = 600
 TAB_PX = 36
 
 FONT = "Calibri,Arial,Helvetica,sans-serif"
@@ -414,33 +414,39 @@ def render_email(report: Report, embed: bool) -> tuple[str, list[str]]:
         f"<tr>{''.join(cells)}</tr></table>"
     )
 
-    cell_border = f"border-bottom:1px solid {RULE};"
     rows = [
-        f'<tr><td colspan="2" bgcolor="{NAVY}" style="{TD_FONT}color:#ffffff;'
+        f'<tr><td bgcolor="{NAVY}" style="{TD_FONT}color:#ffffff;'
         "font-weight:bold;font-size:12px;letter-spacing:1px;"
         'padding:8px 12px;"><b><font color="#ffffff">PROJECTS</font></b></td></tr>'
     ]
     for p in report.projects:
         subtitle = (
             '<div style="font-size:12px;font-weight:normal;font-style:italic;'
-            f'color:{MUTED};margin:4px 0 0 0;">'
+            f'color:{MUTED};margin:2px 0 0 0;">'
             f'<i><font color="{MUTED}">{escape(p.subtitle)}</font></i></div>'
             if p.subtitle
             else ""
         )
         days_txt = format_days(p.days) if p.days is not None else "—"
-        days = (
-            f'<div style="font-size:12px;font-weight:normal;color:{MUTED};'
-            f'margin:5px 0 0 0;"><font color="{MUTED}">{days_txt}</font></div>'
+        chip = (
+            '<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>'
+            '<td bgcolor="#ffffff" style="background-color:#ffffff;'
+            f"border:1px solid {RULE};border-radius:10px;padding:2px 10px;"
+            f'font-family:{FONT};font-size:12px;color:{MUTED};white-space:nowrap;">'
+            f'<font color="{MUTED}">{days_txt}</font></td></tr></table>'
         )
         rows.append(
-            f'<tr><td valign="top" width="150" style="{TD_FONT}font-weight:bold;'
-            f"color:{NAVY};padding:14px 10px 10px 12px;{cell_border}"
-            f'border-right:1px solid {RULE};">'
-            f'<b><font color="{NAVY}">{escape(p.name)}</font></b>'
-            f"{subtitle}{days}</td>"
-            f'<td valign="top" style="{TD_FONT}padding:14px 12px 10px 14px;'
-            f'{cell_border}">'
+            '<tr><td bgcolor="#f2f4f8" style="background-color:#f2f4f8;'
+            f'border-left:3px solid {NAVY};padding:0;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            f'<td style="{TD_FONT}font-size:16px;font-weight:bold;color:{NAVY};'
+            'padding:9px 12px;">'
+            f'<b><font color="{NAVY}">{escape(p.name)}</font></b>{subtitle}</td>'
+            f'<td align="right" valign="middle" style="{TD_FONT}padding:9px 12px;">'
+            f"{chip}</td></tr></table></td></tr>"
+        )
+        rows.append(
+            f'<tr><td style="{TD_FONT}padding:12px 12px 18px 15px;">'
             f"{render_body(p.body_md, embed, warnings)}</td></tr>"
         )
 
