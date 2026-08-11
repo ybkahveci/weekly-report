@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v8';
+const APP_VERSION = 'v9';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -942,9 +942,69 @@ async function upload(file) {
   const w = await fh.createWritable();
   await w.write(file);
   await w.close();
+  insertImageRef(name);
+}
+
+function insertImageRef(name) {
   const ed = $('editor');
-  ed.setRangeText(`![](images/${name})\n`, ed.selectionStart, ed.selectionEnd, 'end');
+  ed.setRangeText(`![](images/${name})\n`, ed.selectionStart, ed.selectionEnd,
+    'end');
+  $('imgview').classList.remove('open');
+  ed.focus();
   scheduleSave();
+}
+
+let imgUrls = [];
+
+async function openImagePanel() {
+  const grid = $('imggrid');
+  grid.innerHTML = '';
+  imgUrls.forEach(URL.revokeObjectURL);
+  imgUrls = [];
+  const names = [];
+  let images = null;
+  try {
+    images = await state.dir.getDirectoryHandle('images');
+    for await (const e of images.values()) {
+      if (e.kind === 'file' && /\.(png|jpe?g|gif)$/i.test(e.name)) {
+        names.push(e.name);
+      }
+    }
+  } catch {
+    /* no images yet */
+  }
+  names.sort().reverse();
+  for (const n of names) {
+    const file = await (await images.getFileHandle(n)).getFile();
+    const url = URL.createObjectURL(file);
+    imgUrls.push(url);
+    const card = document.createElement('div');
+    card.className = 'imgcard';
+    card.title = `Insert ${n}`;
+    const im = document.createElement('img');
+    im.src = url;
+    const cap = document.createElement('div');
+    cap.className = 'imgname';
+    cap.textContent = n;
+    const del = document.createElement('button');
+    del.className = 'imgdel';
+    del.textContent = '✕';
+    del.title = 'Delete image file';
+    del.onclick = async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Delete ${n}? Reports referencing it will show a ` +
+                   'missing image.')) return;
+      await images.removeEntry(n);
+      await openImagePanel();
+    };
+    card.onclick = () => insertImageRef(n);
+    card.append(im, cap, del);
+    grid.appendChild(card);
+  }
+  if (!grid.children.length) {
+    grid.innerHTML = '<div class="tlnone">no images yet</div>';
+  }
+  $('imgview').classList.add('open');
 }
 
 /* folder gate */
@@ -1046,6 +1106,19 @@ applyLayout();
 $('help').addEventListener('click', () => {
   $('helpview').classList.toggle('open');
 });
+$('image').addEventListener('click', () => {
+  openImagePanel().catch(e => setStatus('Images failed: ' + e.message));
+});
+$('img-close').addEventListener('click', () => {
+  $('imgview').classList.remove('open');
+});
+$('imgupload').addEventListener('click', () => $('imgfile').click());
+$('imgfile').addEventListener('change', async e => {
+  try {
+    for (const f of e.target.files) await upload(f);
+    e.target.value = '';
+  } catch (err) { setStatus('Upload failed: ' + err.message); }
+});
 window.addEventListener('beforeunload', e => {
   if (state.dirty) {
     e.preventDefault();
@@ -1071,6 +1144,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     $('histview').classList.remove('open');
     $('helpview').classList.remove('open');
+    $('imgview').classList.remove('open');
   }
   if (e.key === '?' && document.activeElement !== $('editor')) {
     $('helpview').classList.toggle('open');
