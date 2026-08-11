@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v10';
+const APP_VERSION = 'v11';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -730,7 +730,8 @@ async function refresh() {
     `font:12.5px system-ui;">${esc(w)}</div>`).join('');
   const doc =
     '<!doctype html><html><head><meta charset="utf-8"></head>' +
-    '<body style="margin:0;padding:18px;background:#eef1f5;">' +
+    '<body style="margin:0;padding:18px;background:#eef1f5;' +
+    `zoom:${previewZoom()};">` +
     '<div style="max-width:700px;margin:0 auto;">' + banner +
     '<div style="color:#8a94a6;font:12px system-ui;text-align:center;' +
     `margin:0 0 10px 0;">Email size: ${sizeKb.toFixed(0)} KB` +
@@ -740,8 +741,27 @@ async function refresh() {
     '</div></body></html>';
   const fr = $('preview');
   const y = fr.contentWindow ? fr.contentWindow.scrollY : 0;
-  fr.onload = () => fr.contentWindow.scrollTo(0, y);
+  fr.onload = () => {
+    fr.contentWindow.scrollTo(0, y);
+    fr.contentWindow.addEventListener('wheel', ev => {
+      if (!ev.ctrlKey) return;
+      ev.preventDefault();
+      setPreviewZoom(previewZoom() + (ev.deltaY < 0 ? 0.1 : -0.1));
+    }, { passive: false });
+  };
   fr.srcdoc = doc;
+}
+
+function previewZoom() {
+  return parseFloat(localStorage.getItem('previewzoom')) || 1;
+}
+
+function setPreviewZoom(z) {
+  z = Math.min(3, Math.max(0.5, Math.round(z * 10) / 10));
+  localStorage.setItem('previewzoom', String(z));
+  const w = $('preview').contentWindow;
+  if (w && w.document.body) w.document.body.style.zoom = z;
+  $('zoomlvl').textContent = Math.round(z * 100) + '%';
 }
 
 async function save() {
@@ -1076,7 +1096,7 @@ $('rename').addEventListener('click', async () => {
 function applyLayout() {
   const px = localStorage.getItem('splitpx');
   const hidden = localStorage.getItem('previewhidden') === '1';
-  $('preview').style.display = hidden ? 'none' : '';
+  $('pwrap').style.display = hidden ? 'none' : '';
   $('editor').style.flex = !hidden && px ? `0 0 ${px}px` : '1 1 auto';
 }
 $('split').addEventListener('dblclick', () => {
@@ -1101,10 +1121,10 @@ $('split').addEventListener('pointerdown', e => {
   const finish = () => {
     pv.style.pointerEvents = '';
     /* resizing the iframe leaves Chrome's compositor scroll state stale
-       (wheel events arrive but nothing scrolls); a hidden reflow followed
-       by applyLayout rebuilds it */
+       (wheel events arrive but nothing scrolls); a hidden reflow rebuilds it */
     pv.style.display = 'none';
     void pv.offsetHeight;
+    pv.style.display = '';
     applyLayout();
     split.removeEventListener('pointermove', move);
     split.removeEventListener('pointerup', finish);
@@ -1118,6 +1138,11 @@ window.addEventListener('blur', () => {
   $('preview').style.pointerEvents = '';
 });
 applyLayout();
+
+$('zoomin').addEventListener('click', () => setPreviewZoom(previewZoom() + 0.1));
+$('zoomout').addEventListener('click', () => setPreviewZoom(previewZoom() - 0.1));
+$('zoomlvl').addEventListener('click', () => setPreviewZoom(1));
+setPreviewZoom(previewZoom());
 
 $('help').addEventListener('click', () => {
   $('helpview').classList.toggle('open');
