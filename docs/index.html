@@ -45,7 +45,8 @@ main { flex: 1; display: flex; min-height: 0; }
 #editor { flex: 1; border: none; outline: none; resize: none; padding: 16px;
           font: 13px/1.55 Consolas, monospace; background: #fdfdfd;
           color: #24292f; }
-#split { width: 5px; cursor: col-resize; background: #dfe3e8; flex: none; }
+#split { width: 5px; cursor: col-resize; background: #dfe3e8; flex: none;
+         user-select: none; touch-action: none; }
 #split:hover { background: #2d6cdf; }
 #preview { flex: 1; border: none; background: #eef1f5; }
 #copy.ok { background: #1f9d55; border-color: #1f9d55; }
@@ -253,6 +254,6 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

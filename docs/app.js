@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v9';
+const APP_VERSION = 'v10';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -1084,22 +1084,38 @@ $('split').addEventListener('dblclick', () => {
     localStorage.getItem('previewhidden') === '1' ? '' : '1');
   applyLayout();
 });
-$('split').addEventListener('mousedown', e => {
-  e.preventDefault();
-  $('preview').style.pointerEvents = 'none';
+$('split').addEventListener('pointerdown', e => {
+  /* pointer capture: move/up/cancel reach the splitter even when the
+     pointer is released over the iframe or outside the window, so the
+     preview's pointer-events can never get stuck disabled */
+  const split = $('split');
+  const pv = $('preview');
+  split.setPointerCapture(e.pointerId);
+  pv.style.pointerEvents = 'none';
   const move = ev => {
     const left = $('editor').getBoundingClientRect().left;
     localStorage.setItem('splitpx', String(Math.max(240, ev.clientX - left)));
     localStorage.setItem('previewhidden', '');
     applyLayout();
   };
-  const up = () => {
-    $('preview').style.pointerEvents = '';
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', up);
+  const finish = () => {
+    pv.style.pointerEvents = '';
+    /* resizing the iframe leaves Chrome's compositor scroll state stale
+       (wheel events arrive but nothing scrolls); a hidden reflow followed
+       by applyLayout rebuilds it */
+    pv.style.display = 'none';
+    void pv.offsetHeight;
+    applyLayout();
+    split.removeEventListener('pointermove', move);
+    split.removeEventListener('pointerup', finish);
+    split.removeEventListener('pointercancel', finish);
   };
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
+  split.addEventListener('pointermove', move);
+  split.addEventListener('pointerup', finish);
+  split.addEventListener('pointercancel', finish);
+});
+window.addEventListener('blur', () => {
+  $('preview').style.pointerEvents = '';
 });
 applyLayout();
 
