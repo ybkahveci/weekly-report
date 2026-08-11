@@ -102,6 +102,13 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tlmd ul { margin: 6px 0; padding-left: 20px; }
 .tlmd li { margin: 2px 0; }
 .tlnone { color: #8a94a6; font-style: italic; font-size: 13px; }
+#mergebar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px;
+            font-size: 12.5px; color: #4a5568; flex-wrap: wrap; }
+#mergebar select, #mergebar button { font: inherit; padding: 3px 8px;
+  border: 1px solid #d3d8df; border-radius: 4px; background: #fff;
+  cursor: pointer; }
+#mergebar button:hover { border-color: #2d6cdf; color: #2d6cdf; }
+.merge-hint { color: #8a94a6; font-size: 11.5px; }
 .gate-card { background: #fff; border: 1px solid #dce0e6; border-radius: 8px;
              padding: 34px 40px; text-align: center; max-width: 440px; }
 .gate-card h1 { font-size: 18px; margin: 0 0 8px; color: #1f3864; }
@@ -119,6 +126,7 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   <span class="brand">Weekly Report <small id="appver"
     style="opacity:.55;font-size:11px;font-weight:400;"></small></span>
   <select id="file"></select>
+  <button id="rename" title="Rename report file">✎</button>
   <span id="dirty" hidden title="Unsaved changes">●</span>
   <button id="new">New week</button>
   <button id="history">History</button>
@@ -177,6 +185,14 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     </div>
     <div class="hv-card">
       <h2 id="tl-title">Timeline</h2>
+      <div id="mergebar" hidden>
+        <label>Same project as:
+          <select id="mergesel"></select>
+        </label>
+        <button id="mergebtn">Merge</button>
+        <span class="merge-hint">renamed projects are grouped via
+          .project-aliases.json in the reports folder</span>
+      </div>
       <div id="histtl"></div>
     </div>
   </div>
@@ -194,6 +210,6 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

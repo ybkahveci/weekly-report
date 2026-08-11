@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v6';
+const APP_VERSION = 'v7';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -438,23 +438,45 @@ function scaffold(previous, week) {
 
 /* ------------------------------------------------------------------ history */
 
-function aggregateHistory(files) {
+function normKey(name) {
+  return name.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function resolveAlias(name, aliases) {
+  let display = name;
+  const seen = new Set();
+  let key = normKey(display);
+  while (aliases[key] && !seen.has(key)) {
+    seen.add(key);
+    display = aliases[key];
+    key = normKey(display);
+  }
+  return display;
+}
+
+function aggregateHistory(files, aliases = {}) {
   /* files: [{name, text}] in chronological (ascending) order */
   const projects = new Map();
   for (const f of files) {
     const rep = parseReport(f.text);
     const week = rep.meta.week || f.name.replace(/\.md$/, '');
     for (const p of rep.projects) {
-      if (!projects.has(p.name)) {
-        projects.set(p.name, { name: p.name, total: 0, weeks: [] });
+      const display = resolveAlias(p.name, aliases);
+      const key = normKey(display);
+      if (!projects.has(key)) {
+        projects.set(key, { name: display, total: 0, weeks: [] });
       }
-      const entry = projects.get(p.name);
+      const entry = projects.get(key);
+      entry.name = display;  /* latest spelling wins */
       const days = p.days === null ? 0 : p.days;
       entry.total += days;
-      const seg = splitBody(p.bodyMd).find(s => s[0] === 'this week');
+      const segs = splitBody(p.bodyMd);
+      const tw = segs.find(s => s[0] === 'this week');
+      const hasLabels = segs.some(s => s[0] !== null);
       entry.weeks.push({
         file: f.name, week, days: p.days,
-        thisWeek: seg ? seg[1] : '',
+        /* label-less projects (e.g. Others) show their whole body */
+        thisWeek: tw ? tw[1] : (hasLabels ? '' : p.bodyMd),
       });
     }
   }
@@ -463,8 +485,52 @@ function aggregateHistory(files) {
   return { projects: list, grandTotal, reports: files.length };
 }
 
-function renderTimeline(project) {
+const ALIAS_FILE = '.project-aliases.json';
+
+async function readAliases() {
+  try {
+    const text = await (
+      await (await state.dir.getFileHandle(ALIAS_FILE)).getFile()
+    ).text();
+    const norm = {};
+    for (const [from, to] of Object.entries(JSON.parse(text))) {
+      norm[normKey(from)] = to;
+    }
+    return norm;
+  } catch {
+    return {};
+  }
+}
+
+async function writeAlias(from, to) {
+  let raw = {};
+  try {
+    raw = JSON.parse(await (
+      await (await state.dir.getFileHandle(ALIAS_FILE)).getFile()
+    ).text());
+  } catch {
+    /* first alias */
+  }
+  raw[from] = to;
+  await writeFile(ALIAS_FILE, JSON.stringify(raw, null, 2) + '\n');
+}
+
+function renderTimeline(project, hist) {
   document.getElementById('tl-title').textContent = `Timeline — ${project.name}`;
+  const bar = document.getElementById('mergebar');
+  const sel = document.getElementById('mergesel');
+  const others = hist.projects.filter(p => p !== project);
+  bar.hidden = others.length === 0;
+  sel.innerHTML = '';
+  for (const o of others) {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = o.name;
+    sel.appendChild(opt);
+  }
+  document.getElementById('mergebtn').onclick = async () => {
+    await writeAlias(project.name, sel.value);
+    await showHistory();
+  };
   const tl = document.getElementById('histtl');
   tl.innerHTML = '';
   for (const w of project.weeks) {
@@ -496,7 +562,7 @@ async function showHistory() {
   const names = (await listFiles()).sort();
   const files = [];
   for (const n of names) files.push({ name: n, text: await readFile(n) });
-  const hist = aggregateHistory(files);
+  const hist = aggregateHistory(files, await readAliases());
 
   document.getElementById('hv-meta').textContent =
     `${hist.reports} report${hist.reports === 1 ? '' : 's'} · ` +
@@ -532,13 +598,14 @@ async function showHistory() {
     tr.onclick = () => {
       for (const row of tbody.children) row.classList.remove('sel');
       tr.classList.add('sel');
-      renderTimeline(p);
+      renderTimeline(p, hist);
     };
     tbody.appendChild(tr);
     if (i === 0) tr.onclick();
   });
   if (!hist.projects.length) {
     document.getElementById('tl-title').textContent = 'Timeline';
+    document.getElementById('mergebar').hidden = true;
     document.getElementById('histtl').innerHTML =
       '<div class="tlnone">no reports found</div>';
   }
@@ -917,6 +984,26 @@ async function init() {
 $('editor').addEventListener('input', scheduleSave);
 $('editor').addEventListener('keydown', editorKeydown);
 $('file').addEventListener('change', e => openFile(e.target.value));
+$('rename').addEventListener('click', async () => {
+  if (!state.current) return;
+  let name = prompt('New file name:', state.current);
+  if (!name || name === state.current) return;
+  if (!name.endsWith('.md')) name += '.md';
+  if (!/^[A-Za-z0-9][A-Za-z0-9 ._&-]*\.md$/.test(name)) {
+    alert('Invalid file name');
+    return;
+  }
+  try {
+    if (await fileExists(name)) {
+      alert(`${name} already exists`);
+      return;
+    }
+    await writeFile(name, $('editor').value);
+    await state.dir.removeEntry(state.current);
+    await loadList(name);
+    setStatus('Renamed');
+  } catch (e) { setStatus('Rename failed: ' + e.message); }
+});
 
 /* pane layout: drag #split to resize, double-click to hide the preview */
 function applyLayout() {

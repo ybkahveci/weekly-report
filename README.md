@@ -80,6 +80,13 @@ project (totals, share, meter) and a chronological timeline of each
 project's *This week* entries — useful for quarterly summaries and
 appraisals. Click a project row to see its timeline; Esc closes.
 
+Project identity ignores case and extra whitespace; for real renames,
+select the project and use **Same project as… → Merge** — mappings are
+stored in `.project-aliases.json` next to the reports (so they sync
+through git). Projects without This week/Status/Upcoming labels (like
+Others) show their whole content in the timeline. The pencil button
+next to the file selector renames the current report file.
+
 ## Sync reports between machines
 
 `weekly-reports/` is git-ignored here; make it its own repo pushed to a
