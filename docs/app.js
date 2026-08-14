@@ -92,6 +92,14 @@ const LIST_RE = /^\s*(?:[-*+]\s|\d+\.\s)/;
 /* One nesting level. Four spaces, not two: python-markdown (the Flask
    frontend) only nests a sub-list at four, while marked accepts either. */
 const INDENT = '    ';
+/* Ctrl+key -> what wraps the selection. Markdown has no underline, so that
+   one emits a literal <u> tag; both renderers pass inline HTML through and
+   the Word engine honors the tag. */
+const MARKS = {
+  b: ['**'],
+  i: ['*'],
+  u: ['<u>', '</u>'],
+};
 const HEAD_DAYS_RE = /^(.+?)\s+[—–-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
 
 const esc = s => String(s)
@@ -923,21 +931,21 @@ function indentSelection(ed, dir) {
   ed.setRangeText(out, start, end, 'select');
 }
 
-function wrapSelection(ed, mark) {
+function wrapSelection(ed, open, close = open) {
   const s = ed.selectionStart;
   const e = ed.selectionEnd;
   const sel = ed.value.slice(s, e);
-  if (sel.startsWith(mark) && sel.endsWith(mark) &&
-      sel.length >= 2 * mark.length) {
-    ed.setRangeText(sel.slice(mark.length, sel.length - mark.length),
+  if (sel.startsWith(open) && sel.endsWith(close) &&
+      sel.length >= open.length + close.length) {
+    ed.setRangeText(sel.slice(open.length, sel.length - close.length),
       s, e, 'select');
     return;
   }
-  ed.setRangeText(mark + sel + mark, s, e, 'select');
+  ed.setRangeText(open + sel + close, s, e, 'select');
   if (sel) {
-    ed.setSelectionRange(s, e + 2 * mark.length);
+    ed.setSelectionRange(s, e + open.length + close.length);
   } else {
-    ed.setSelectionRange(s + mark.length, s + mark.length);
+    ed.setSelectionRange(s + open.length, s + open.length);
   }
 }
 
@@ -974,9 +982,9 @@ function editorKeydown(e) {
     scheduleSave();
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i')) {
+  if ((e.ctrlKey || e.metaKey) && MARKS[e.key]) {
     e.preventDefault();
-    wrapSelection(ed, e.key === 'b' ? '**' : '*');
+    wrapSelection(ed, ...MARKS[e.key]);
     scheduleSave();
   }
 }

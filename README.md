@@ -76,6 +76,10 @@ Upcoming:
   Press Tab to make a sub-bullet, Shift+Tab to come back out; Enter on an
   empty sub-bullet also steps out one level. Indent by four spaces if you
   type it by hand: two nests in the web version but not in the Flask one.
+- Emphasis: select a word and press Ctrl+B, Ctrl+I or Ctrl+U — which writes
+  `**bold**`, `*italic*` and `<u>underline</u>`. Markdown has no underline
+  syntax, so that one is a literal HTML tag; both renderers pass it through
+  and Outlook honors it. Pressing the same key again removes the marks.
 - Paste or drag an image into the editor to attach it; fenced code blocks
   get inline syntax highlighting.
 
@@ -114,8 +118,8 @@ after.
 The outline sidebar lists projects in order with their day counts and a
 live total: the arrows (or Alt+Up/Down inside the editor) move a project,
 clicking a name jumps to it. The web editor continues bullet lists on
-Enter, indents with Tab/Shift+Tab, and bolds/italicizes with Ctrl+B/I —
-press `?` (or the ? button) for the full shortcut list.
+Enter, indents with Tab/Shift+Tab, and bolds/italicizes/underlines with
+Ctrl+B/I/U — press `?` (or the ? button) for the full shortcut list.
 
 **New week** scaffolds the next report from the latest one: projects and
 subtitles carry over, each project's *Status* and *Upcoming* are kept,
