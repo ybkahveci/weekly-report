@@ -34,7 +34,6 @@ REPORTS_DIR = Path(__file__).resolve().parent / "weekly-reports"
 
 # Full-width layout: 640 minus content padding.
 MAX_IMG_WIDTH = 600
-TAB_PX = 36
 
 FONT = "Calibri,Arial,Helvetica,sans-serif"
 MONO = "Consolas,'Courier New',monospace"
@@ -380,18 +379,6 @@ def _italicize(frag: str) -> str:
     return re.sub(r"</(p|li)>", r"</i></\1>", frag)
 
 
-def _indent(frag: str) -> str:
-    """Spacer-cell table: the only indent the Word engine renders reliably."""
-    if not frag:
-        return frag
-    return (
-        '<table cellpadding="0" cellspacing="0" border="0" width="100%">'
-        f'<tr><td width="{TAB_PX}" style="font-size:1px;line-height:1px;">'
-        "&nbsp;</td>"
-        f'<td valign="top" style="{TD_FONT}">{frag}</td></tr></table>'
-    )
-
-
 def render_body(body_md: str, embed: bool, warnings: list[str]) -> str:
     if not body_md.strip():
         return ""
@@ -408,12 +395,6 @@ def render_body(body_md: str, embed: bool, warnings: list[str]) -> str:
         frag = _md_fragment(content, embed, warnings) if content.strip() else ""
         if label == "this week":
             frag = _italicize(frag)
-        elif label == "status" and not any(
-            # bullet lists indent themselves; only plain text needs the tab
-            LIST_RE.match(ln)
-            for ln in content.splitlines()
-        ):
-            frag = _indent(frag)
         parts.append(frag)
     return "".join(parts)
 

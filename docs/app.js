@@ -19,7 +19,6 @@ const APP_VERSION = 'v11';
 /* ---------------------------------------------------------------- email CSS */
 
 const MAX_IMG_WIDTH = 600;  /* full-width layout: 640 minus content padding */
-const TAB_PX = 36;
 
 const FONT = 'Calibri,Arial,Helvetica,sans-serif';
 const MONO = "Consolas,'Courier New',monospace";
@@ -326,15 +325,6 @@ function italicize(frag) {
     .replace(/<\/(p|li)>/g, '</i></$1>');
 }
 
-function indent(frag) {
-  /* Spacer-cell table: the only indent the Word engine renders reliably. */
-  if (!frag) return frag;
-  return '<table cellpadding="0" cellspacing="0" border="0" width="100%">' +
-    `<tr><td width="${TAB_PX}" style="font-size:1px;line-height:1px;">` +
-    '&nbsp;</td>' +
-    `<td valign="top" style="${TD_FONT}">${frag}</td></tr></table>`;
-}
-
 async function renderBody(bodyMd, warnings) {
   if (!bodyMd.trim()) return '';
   const parts = [];
@@ -349,9 +339,6 @@ async function renderBody(bodyMd, warnings) {
     let frag = content.trim() ? await mdFragment(content, warnings) : '';
     if (label === 'this week') {
       frag = italicize(frag);
-    } else if (label === 'status' &&
-               !content.split('\n').some(ln => LIST_RE.test(ln))) {
-      frag = indent(frag);
     }
     parts.push(frag);
   }
