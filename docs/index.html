@@ -137,6 +137,7 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tlmd { font-size: 13.5px; color: #24292f; }
 .tlmd p { margin: 4px 0; }
 .tlmd ul { margin: 6px 0; padding-left: 20px; }
+.tlmd li > ul, .tlmd li > ol { margin: 2px 0; }
 .tlmd li { margin: 2px 0; }
 .tlnone { color: #8a94a6; font-style: italic; font-size: 13px; }
 #mergebar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px;
@@ -236,7 +237,7 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
       <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save now</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Continue bullet / numbered list</td></tr>
       <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td>
-          <td>Indent / outdent line(s)</td></tr>
+          <td>Indent / outdent — makes a sub-bullet</td></tr>
       <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td>
           <td>Bold / italic selection</td></tr>
       <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd></td>
@@ -244,9 +245,11 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
       <tr><td><kbd>Esc</kbd></td><td>Close panels</td></tr>
       <tr><td><kbd>?</kbd></td><td>This help (outside the editor)</td></tr>
     </table>
-    <div class="help-hint">Drag the divider to resize the panes;
-      double-click it to hide or show the preview. Images: paste or drag
-      them into the editor, or use the Image… button.</div>
+    <div class="help-hint">Bullets nest three levels deep — • then ◦ then ▪.
+      <kbd>Enter</kbd> on an empty sub-bullet steps back out one level.
+      Drag the divider to resize the panes; double-click it to hide or show
+      the preview. Images: paste or drag them into the editor, or use the
+      Image… button.</div>
   </div>
 </div>
 <div id="histview">
@@ -293,11 +296,12 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
         <code>##</code> heading per project with its day count — the total is
         summed for you.</li>
       <li><b>Copy email</b>, then paste into your mail compose window and send.
-        Formatting, tables and images come along.</li>
+        Formatting, links and images come along.</li>
     </ol>
     <div class="gate-sample">## Project name — 2 days
 This week:
 - what happened
+    - a detail underneath (Tab makes a sub-bullet)
 
 Status:
 - Ongoing
@@ -314,6 +318,6 @@ Upcoming:
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

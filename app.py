@@ -62,6 +62,15 @@ TAG_STYLES = {
     "h3": f"font-size:15px;margin:10px 0 4px 0;color:{NAVY};",
     "h4": "font-size:15px;margin:10px 0 4px 0;",
 }
+# A sub-list sits inside its parent <li>, so the 10px tail a top-level list
+# needs would open a gap before the item that follows it.
+NESTED_LIST_STYLE = "margin:3px 0 2px 0;padding:0 0 0 22px;"
+# (legacy type attribute, CSS equivalent) per depth: browsers vary the marker
+# by nesting level on their own, the Word engine only obeys type=.
+LIST_MARKERS = {
+    "ul": [("disc", "disc"), ("circle", "circle"), ("square", "square")],
+    "ol": [("1", "decimal"), ("a", "lower-alpha"), ("i", "lower-roman")],
+}
 A_STYLE = "color:#1f6fb2;"
 CODE_INLINE_STYLE = (
     f"font-family:{MONO};font-size:13px;background-color:#f5f5f5;padding:0 3px;"
@@ -253,9 +262,33 @@ def harden_code_blocks(html: str) -> str:
     return CODEBLOCK_RE.sub(repl, html)
 
 
+LIST_TAG_RE = re.compile(r"<(/?)(ul|ol)>")
+
+
+def style_lists(html: str) -> str:
+    """Style ul/ol by nesting depth: markers stay distinct three levels deep
+    and only the outermost list keeps the paragraph-sized bottom margin."""
+    depth = 0
+
+    def repl(match: re.Match) -> str:
+        nonlocal depth
+        tag = match.group(2)
+        if match.group(1):
+            depth = max(0, depth - 1)
+            return match.group(0)
+        markers = LIST_MARKERS[tag]
+        attr, css = markers[min(depth, len(markers) - 1)]
+        style = NESTED_LIST_STYLE if depth else TAG_STYLES[tag]
+        depth += 1
+        return f'<{tag} type="{attr}" style="{style}list-style-type:{css};">'
+
+    return LIST_TAG_RE.sub(repl, html)
+
+
 def inject_styles(html: str) -> str:
+    html = style_lists(html)
     html = re.sub(
-        r"<(p|ul|ol|li|blockquote|h1|h2|h3|h4)>",
+        r"<(p|li|blockquote|h1|h2|h3|h4)>",
         lambda m: f'<{m.group(1)} style="{TAG_STYLES[m.group(1)]}">',
         html,
     )

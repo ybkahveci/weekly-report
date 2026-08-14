@@ -55,6 +55,8 @@ productivity: high
 
 This week:
 - what happened
+    - a detail underneath
+        - and one level deeper
 
 Status:
 - Ongoing
@@ -70,6 +72,10 @@ Upcoming:
   An optional `days:` in the frontmatter is checked against the sum.
 - `productivity:` is free text; the row is omitted when empty.
 - `This week:` / `Status:` / `Upcoming:` labels are bolded automatically.
+- Bullets nest three levels — • then ◦ then ▪ (numbers go 1. then a. then i.).
+  Press Tab to make a sub-bullet, Shift+Tab to come back out; Enter on an
+  empty sub-bullet also steps out one level. Indent by four spaces if you
+  type it by hand: two nests in the web version but not in the Flask one.
 - Paste or drag an image into the editor to attach it; fenced code blocks
   get inline syntax highlighting.
 

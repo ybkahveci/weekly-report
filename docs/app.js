@@ -44,6 +44,15 @@ const TAG_STYLES = {
   H3: `font-size:15px;margin:10px 0 4px 0;color:${NAVY};`,
   H4: 'font-size:15px;margin:10px 0 4px 0;',
 };
+/* A sub-list sits inside its parent <li>, so the 10px tail a top-level list
+   needs would open a gap before the item that follows it. */
+const NESTED_LIST_STYLE = 'margin:3px 0 2px 0;padding:0 0 0 22px;';
+/* [legacy type attribute, CSS equivalent] per depth: browsers vary the marker
+   by nesting level on their own, the Word engine only obeys type=. */
+const LIST_MARKERS = {
+  UL: [['disc', 'disc'], ['circle', 'circle'], ['square', 'square']],
+  OL: [['1', 'decimal'], ['a', 'lower-alpha'], ['i', 'lower-roman']],
+};
 const A_STYLE = 'color:#1f6fb2;';
 const CODE_INLINE_STYLE =
   `font-family:${MONO};font-size:13px;background-color:#f5f5f5;padding:0 3px;`;
@@ -81,6 +90,9 @@ const HLJS_COLORS = {
 
 const LABEL_RE = /^(this week|status|upcoming)\s*:(.*)$/i;
 const LIST_RE = /^\s*(?:[-*+]\s|\d+\.\s)/;
+/* One nesting level. Four spaces, not two: python-markdown (the Flask
+   frontend) only nests a sub-list at four, while marked accepts either. */
+const INDENT = '    ';
 const HEAD_DAYS_RE = /^(.+?)\s+[—–-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
 
 const esc = s => String(s)
@@ -209,10 +221,28 @@ function highlightAndHarden(container) {
   }
 }
 
+function styleLists(container) {
+  /* Style ul/ol by nesting depth: markers stay distinct three levels deep and
+     only the outermost list keeps the paragraph-sized bottom margin. */
+  for (const list of container.querySelectorAll('ul,ol')) {
+    let depth = 0;
+    for (let p = list.parentElement; p && p !== container; p = p.parentElement) {
+      if (p.tagName === 'UL' || p.tagName === 'OL') depth++;
+    }
+    const markers = LIST_MARKERS[list.tagName];
+    const [attr, css] = markers[Math.min(depth, markers.length - 1)];
+    list.setAttribute('type', attr);
+    list.setAttribute('style',
+      (depth ? NESTED_LIST_STYLE : TAG_STYLES[list.tagName]) +
+      `list-style-type:${css};`);
+  }
+}
+
 function injectStyles(container) {
-  for (const el of container.querySelectorAll('p,ul,ol,li,blockquote,h1,h2,h3,h4')) {
+  for (const el of container.querySelectorAll('p,li,blockquote,h1,h2,h3,h4')) {
     el.setAttribute('style', TAG_STYLES[el.tagName]);
   }
+  styleLists(container);
   for (const a of container.querySelectorAll('a')) a.setAttribute('style', A_STYLE);
   for (const c of container.querySelectorAll('code')) {
     if (c.parentElement.tagName !== 'PRE') c.setAttribute('style', CODE_INLINE_STYLE);
@@ -902,7 +932,7 @@ function indentSelection(ed, dir) {
   if (end === -1) end = ed.value.length;
   const block = ed.value.slice(start, end);
   const out = block.split('\n').map(ln =>
-    dir > 0 ? '    ' + ln : ln.replace(/^ {1,4}/, '')).join('\n');
+    dir > 0 ? INDENT + ln : ln.replace(/^ {1,4}/, '')).join('\n');
   ed.setRangeText(out, start, end, 'select');
 }
 
@@ -935,7 +965,12 @@ function editorKeydown(e) {
     if (m) {
       e.preventDefault();
       if (!m[3].trim()) {
-        ed.setRangeText('', lineStart, pos, 'start');   /* end the list */
+        if (m[1].length >= INDENT.length) {   /* step out one level first */
+          ed.setRangeText(`${m[1].slice(INDENT.length)}${m[2]} `,
+            lineStart, pos, 'end');
+        } else {
+          ed.setRangeText('', lineStart, pos, 'start');   /* end the list */
+        }
       } else {
         const num = m[2].match(/^(\d+)([.)])$/);
         const marker = num ? `${Number(num[1]) + 1}${num[2]}` : m[2];
