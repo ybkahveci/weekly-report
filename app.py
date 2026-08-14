@@ -872,7 +872,12 @@ async function upload(file) {
   const r = await api('/api/upload', { method: 'POST', body: fd });
   const { markdown } = await r.json();
   const ed = $('editor');
-  ed.setRangeText(markdown + '\n', ed.selectionStart, ed.selectionEnd, 'end');
+  ed.focus();
+  /* execCommand edits through the undo stack so Ctrl+Z still works;
+     setRangeText rewrites the value behind the browser's back */
+  if (!document.execCommand('insertText', false, markdown + '\n')) {
+    ed.setRangeText(markdown + '\n', ed.selectionStart, ed.selectionEnd, 'end');
+  }
   scheduleSave();
 }
 

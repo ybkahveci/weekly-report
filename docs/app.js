@@ -921,6 +921,21 @@ function renderOutline() {
 
 /* editor keybindings */
 
+function replaceRange(ed, start, end, text, mode = 'end') {
+  /* execCommand edits through the browser's own undo stack, so Ctrl+Z still
+     works; setRangeText rewrites the value behind its back and Ctrl+Z then
+     has nothing to undo. mode: where the caret lands ('select' spans the
+     inserted text). */
+  ed.focus();
+  ed.setSelectionRange(start, end);
+  const ok = text
+    ? document.execCommand('insertText', false, text)
+    : start !== end && document.execCommand('delete');
+  if (!ok) ed.setRangeText(text, start, end, 'end');
+  if (mode === 'select') ed.setSelectionRange(start, start + text.length);
+  else if (mode === 'start') ed.setSelectionRange(start, start);
+}
+
 function indentSelection(ed, dir) {
   const start = ed.value.lastIndexOf('\n', ed.selectionStart - 1) + 1;
   let end = ed.value.indexOf('\n', ed.selectionEnd);
@@ -928,7 +943,7 @@ function indentSelection(ed, dir) {
   const block = ed.value.slice(start, end);
   const out = block.split('\n').map(ln =>
     dir > 0 ? INDENT + ln : ln.replace(/^ {1,4}/, '')).join('\n');
-  ed.setRangeText(out, start, end, 'select');
+  replaceRange(ed, start, end, out, 'select');
 }
 
 function wrapSelection(ed, open, close = open) {
@@ -937,11 +952,11 @@ function wrapSelection(ed, open, close = open) {
   const sel = ed.value.slice(s, e);
   if (sel.startsWith(open) && sel.endsWith(close) &&
       sel.length >= open.length + close.length) {
-    ed.setRangeText(sel.slice(open.length, sel.length - close.length),
-      s, e, 'select');
+    replaceRange(ed, s, e, sel.slice(open.length, sel.length - close.length),
+      'select');
     return;
   }
-  ed.setRangeText(open + sel + close, s, e, 'select');
+  replaceRange(ed, s, e, open + sel + close);
   if (sel) {
     ed.setSelectionRange(s, e + open.length + close.length);
   } else {
@@ -961,15 +976,15 @@ function editorKeydown(e) {
       e.preventDefault();
       if (!m[3].trim()) {
         if (m[1].length >= INDENT.length) {   /* step out one level first */
-          ed.setRangeText(`${m[1].slice(INDENT.length)}${m[2]} `,
-            lineStart, pos, 'end');
+          replaceRange(ed, lineStart, pos,
+            `${m[1].slice(INDENT.length)}${m[2]} `);
         } else {
-          ed.setRangeText('', lineStart, pos, 'start');   /* end the list */
+          replaceRange(ed, lineStart, pos, '', 'start');  /* end the list */
         }
       } else {
         const num = m[2].match(/^(\d+)([.)])$/);
         const marker = num ? `${Number(num[1]) + 1}${num[2]}` : m[2];
-        ed.setRangeText(`\n${m[1]}${marker} `, pos, pos, 'end');
+        replaceRange(ed, pos, pos, `\n${m[1]}${marker} `);
       }
       scheduleSave();
       return;
@@ -1010,10 +1025,9 @@ async function upload(file) {
 
 function insertImageRef(name) {
   const ed = $('editor');
-  ed.setRangeText(`![](images/${name})\n`, ed.selectionStart, ed.selectionEnd,
-    'end');
   $('imgview').classList.remove('open');
-  ed.focus();
+  replaceRange(ed, ed.selectionStart, ed.selectionEnd,
+    `![](images/${name})\n`);
   scheduleSave();
 }
 
