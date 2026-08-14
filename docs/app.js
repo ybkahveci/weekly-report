@@ -48,6 +48,18 @@ const A_STYLE = 'color:#1f6fb2;';
 const CODE_INLINE_STYLE =
   `font-family:${MONO};font-size:13px;background-color:#f5f5f5;padding:0 3px;`;
 
+/* Credit line closing every email; the spacer row is the only top gap the
+   Word engine renders reliably above a bordered cell. */
+const APP_URL = 'https://ybkahveci.github.io/weekly-report/';
+const FOOTER =
+  '<table width="640" cellpadding="0" cellspacing="0" border="0">' +
+  '<tr><td height="16" style="font-size:1px;line-height:16px;">&nbsp;</td></tr>' +
+  `<tr><td style="font-family:${FONT};font-size:12px;line-height:1.45;` +
+  `color:${MUTED};border-top:1px solid ${RULE};padding:8px 0 0 0;">` +
+  `<font color="${MUTED}">Made with weekly-report — write in Markdown, ` +
+  `paste into Outlook: </font><a href="${APP_URL}" style="${A_STYLE}">` +
+  `<font color="#1f6fb2">${APP_URL}</font></a></td></tr></table>`;
+
 /* Pygments-default-like colors for highlight.js token classes. */
 const HLJS_COLORS = {
   'hljs-keyword': 'color:#008000;font-weight:bold;',
@@ -393,7 +405,8 @@ async function renderEmail(report) {
     '<p style="margin:0 0 14px 0;">This is my weekly progress report.</p>' +
     header +
     '<table width="640" cellpadding="0" cellspacing="0" border="0"' +
-    ' style="border-collapse:collapse;">' + rows.join('') + '</table></div>';
+    ' style="border-collapse:collapse;">' + rows.join('') + '</table>' +
+    FOOTER + '</div>';
   return { html, warnings };
 }
 

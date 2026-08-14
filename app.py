@@ -67,6 +67,19 @@ CODE_INLINE_STYLE = (
     f"font-family:{MONO};font-size:13px;background-color:#f5f5f5;padding:0 3px;"
 )
 
+# Credit line closing every email; the spacer row is the only top gap the
+# Word engine renders reliably above a bordered cell.
+APP_URL = "https://ybkahveci.github.io/weekly-report/"
+FOOTER = (
+    '<table width="640" cellpadding="0" cellspacing="0" border="0">'
+    '<tr><td height="16" style="font-size:1px;line-height:16px;">&nbsp;</td></tr>'
+    f'<tr><td style="font-family:{FONT};font-size:12px;line-height:1.45;'
+    f'color:{MUTED};border-top:1px solid {RULE};padding:8px 0 0 0;">'
+    f'<font color="{MUTED}">Made with weekly-report — write in Markdown, '
+    f'paste into Outlook: </font><a href="{APP_URL}" style="{A_STYLE}">'
+    f'<font color="#1f6fb2">{APP_URL}</font></a></td></tr></table>'
+)
+
 MD_EXTENSIONS = ["fenced_code", "sane_lists", "nl2br", "codehilite"]
 MD_CONFIGS = {"codehilite": {"noclasses": True, "pygments_style": "default"}}
 
@@ -457,7 +470,8 @@ def render_email(report: Report, embed: bool) -> tuple[str, list[str]]:
         '<p style="margin:0 0 14px 0;">This is my weekly progress report.</p>'
         f"{header}"
         '<table width="640" cellpadding="0" cellspacing="0" border="0"'
-        ' style="border-collapse:collapse;">' + "".join(rows) + "</table></div>"
+        ' style="border-collapse:collapse;">' + "".join(rows) + "</table>"
+        + FOOTER + "</div>"
     )
     return html, warnings
 

@@ -118,3 +118,13 @@ subtitles carry over, each project's *Status* and *Upcoming* are kept,
 **Copy email** puts the rendered HTML on the clipboard with images embedded;
 the compose window converts them to proper inline attachments on paste.
 Send one to yourself first to sanity-check rendering in your client.
+
+## Use it
+
+The hosted web version — no install, nothing to sign up for:
+
+**https://ybkahveci.github.io/weekly-report/**
+
+Open it in Chrome or Edge (the File System Access API is required), pick a
+folder for your reports on first visit, and start writing. Everything runs
+in the browser and your reports stay on your own machine.
