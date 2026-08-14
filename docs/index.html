@@ -101,7 +101,7 @@ kbd { background: #f3f4f6; border: 1px solid #d3d8df; border-bottom-width: 2px;
 .help-hint { margin-top: 12px; font-size: 12px; color: #7a8699;
              max-width: 340px; }
 #gate { position: fixed; inset: 0; background: #eef1f5; display: flex;
-        align-items: center; justify-content: center; z-index: 10; }
+        justify-content: center; overflow-y: auto; padding: 24px; z-index: 10; }
 #histview { position: fixed; inset: 0; background: #eef1f5; z-index: 20;
             display: none; flex-direction: column; }
 #histview.open { display: flex; }
@@ -146,9 +146,12 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   cursor: pointer; }
 #mergebar button:hover { border-color: #2d6cdf; color: #2d6cdf; }
 .merge-hint { color: #8a94a6; font-size: 11.5px; }
+/* margin:auto centers the card without clipping its top when it is taller
+   than the viewport, which align-items:center would do */
 .gate-card { background: #fff; border: 1px solid #dce0e6; border-radius: 8px;
-             padding: 34px 40px; text-align: center; max-width: 440px; }
-.gate-card h1 { font-size: 18px; margin: 0 0 8px; color: #1f3864; }
+             padding: 32px 38px; text-align: center; max-width: 560px;
+             margin: auto; }
+.gate-card h1 { font-size: 19px; margin: 0 0 8px; color: #1f3864; }
 .gate-card p { color: #5a6472; font-size: 13.5px; line-height: 1.5;
                margin: 0 0 18px; }
 .gate-card button { font: inherit; padding: 9px 22px; border-radius: 5px;
@@ -156,6 +159,23 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   font-weight: 600; margin: 0 4px; }
 .gate-card button.alt { background: #fff; color: #2d6cdf; }
 .gate-card .err { color: #b00020; font-size: 12.5px; margin-top: 12px; }
+.gate-steps { counter-reset: step; list-style: none; text-align: left;
+              margin: 0 0 16px; padding: 0; }
+.gate-steps li { counter-increment: step; position: relative; margin: 0 0 9px;
+                 padding-left: 30px; font-size: 13.5px; line-height: 1.45;
+                 color: #2a3342; }
+.gate-steps li::before { content: counter(step); position: absolute; left: 0;
+                 top: 1px; width: 20px; height: 20px; border-radius: 50%;
+                 background: #eaf0fb; color: #2d6cdf; font-size: 11.5px;
+                 font-weight: 700; line-height: 20px; text-align: center; }
+.gate-card code { background: #f3f4f6; border-radius: 3px; padding: 0 4px;
+                  font: 12px Consolas, monospace; }
+.gate-sample { text-align: left; background: #f7f8fa; border: 1px solid #e3e6ea;
+               border-radius: 6px; margin: 0 0 20px; padding: 12px 14px;
+               font: 12px/1.5 Consolas, monospace; color: #24292f;
+               white-space: pre; overflow-x: auto; }
+.gate-note { font-size: 12px; line-height: 1.5; color: #7a8699;
+             margin: 18px 0 0; }
 </style>
 </head>
 <body>
@@ -262,12 +282,34 @@ table.hsum { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 <div id="gate">
   <div class="gate-card">
     <h1>Weekly Report</h1>
-    <p>Pick your <b>weekly-reports</b> folder to start. Reports are read and
-       saved directly on your disk — nothing is uploaded anywhere.
-       Requires Chrome or Edge.</p>
+    <p>Write your weekly report in Markdown, send it as a properly formatted
+       email. Everything runs in this browser tab — reports are read and saved
+       directly on your own disk, nothing is uploaded anywhere.</p>
+    <ol class="gate-steps">
+      <li><b>Pick a folder</b> for your reports — one <code>.md</code> file per
+        week is kept there. An empty folder is fine; the browser remembers it
+        next time.</li>
+      <li><b>New week</b> creates the report below, ready to fill in. One
+        <code>##</code> heading per project with its day count — the total is
+        summed for you.</li>
+      <li><b>Copy email</b>, then paste into your mail compose window and send.
+        Formatting, tables and images come along.</li>
+    </ol>
+    <div class="gate-sample">## Project name — 2 days
+This week:
+- what happened
+
+Status:
+- Ongoing
+
+Upcoming:
+- what comes next</div>
     <button id="open-folder">Open folder…</button>
     <button id="reopen-folder" class="alt" hidden>Reopen last folder</button>
     <div class="err" id="gate-err"></div>
+    <p class="gate-note">Requires Chrome or Edge (the File System Access API is
+      how it reaches your folder). Later on: <b>History</b> totals days per
+      project across every week, and <kbd>?</kbd> lists the editor shortcuts.</p>
   </div>
 </div>
 <script src="vendor/marked-14.min.js"></script>
