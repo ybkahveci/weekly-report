@@ -19,6 +19,9 @@ const APP_VERSION = 'v11';
 /* ---------------------------------------------------------------- email CSS */
 
 const MAX_IMG_WIDTH = 600;  /* full-width layout: 640 minus content padding */
+/* Images are embedded at twice the width they are displayed at, so they stay
+   sharp on high-DPI screens instead of being upscaled from 600 real pixels. */
+const EMBED_SCALE = 2;
 
 const FONT = 'Calibri,Arial,Helvetica,sans-serif';
 const MONO = "Consolas,'Courier New',monospace";
@@ -277,15 +280,19 @@ function fileDataUri(file) {
 async function embedImage(file) {
   if (file.type === 'image/gif') return { uri: await fileDataUri(file), width: null };
   const bmp = await createImageBitmap(file);
-  if (bmp.width <= MAX_IMG_WIDTH) {
-    return { uri: await fileDataUri(file), width: bmp.width };
-  }
+  const width = Math.min(bmp.width, MAX_IMG_WIDTH);
+  const target = MAX_IMG_WIDTH * EMBED_SCALE;
+  /* Anything that already fits the pixel budget is embedded byte for byte —
+     re-encoding it would only throw detail away. */
+  if (bmp.width <= target) return { uri: await fileDataUri(file), width };
   const canvas = document.createElement('canvas');
-  canvas.width = MAX_IMG_WIDTH;
-  canvas.height = Math.round(bmp.height * MAX_IMG_WIDTH / bmp.width);
-  canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  canvas.width = target;
+  canvas.height = Math.round(bmp.height * target / bmp.width);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';   /* the default 'low' aliases badly */
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
   const mime = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-  return { uri: canvas.toDataURL(mime, 0.85), width: MAX_IMG_WIDTH };
+  return { uri: canvas.toDataURL(mime, 0.92), width };
 }
 
 async function processImages(container, warnings) {

@@ -82,6 +82,10 @@ Upcoming:
   and Outlook honors it. Pressing the same key again removes the marks.
 - Paste or drag an image into the editor to attach it; fenced code blocks
   get inline syntax highlighting.
+- Images are shown 600 px wide but embedded at up to 1200, so they stay sharp
+  on high-DPI screens; anything already under 1200 px goes in untouched. That
+  costs email size — the header warns past ~95 KB, where Gmail starts
+  clipping. The file in `images/` is always the untouched original.
 
 ## History
 

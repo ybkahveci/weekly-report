@@ -34,6 +34,9 @@ REPORTS_DIR = Path(__file__).resolve().parent / "weekly-reports"
 
 # Full-width layout: 640 minus content padding.
 MAX_IMG_WIDTH = 600
+# Images are embedded at twice the width they are displayed at, so they stay
+# sharp on high-DPI screens instead of being upscaled from 600 real pixels.
+EMBED_SCALE = 2
 
 FONT = "Calibri,Arial,Helvetica,sans-serif"
 MONO = "Consolas,'Courier New',monospace"
@@ -297,22 +300,26 @@ def inject_styles(html: str) -> str:
 
 
 def _load_local_image(path: Path) -> tuple[str, int | None]:
-    """Return (data URI, display width). Downscales when Pillow is present so
-    the base64 payload stays under Gmail's ~100 KB body clip."""
+    """Return (data URI, display width). Anything already within the pixel
+    budget is embedded byte for byte; only what is bigger gets resampled."""
     data = path.read_bytes()
     mime = IMAGE_MIMES[path.suffix.lower()]
     width = None
     if Image is not None and mime != "image/gif":
         img = Image.open(path)
         width = min(img.width, MAX_IMG_WIDTH)
-        if img.width > MAX_IMG_WIDTH:
-            ratio = MAX_IMG_WIDTH / img.width
-            img = img.resize((MAX_IMG_WIDTH, round(img.height * ratio)), Image.LANCZOS)
+        target = MAX_IMG_WIDTH * EMBED_SCALE
+        if img.width > target:
+            # Convert before resampling: run over palette indices instead of
+            # colors and LANCZOS returns garbage.
+            img = img.convert("RGB" if mime == "image/jpeg" else "RGBA")
+            ratio = target / img.width
+            img = img.resize((target, round(img.height * ratio)), Image.LANCZOS)
             buf = io.BytesIO()
             if mime == "image/jpeg":
-                img.save(buf, "JPEG", quality=85)
+                img.save(buf, "JPEG", quality=92)
             else:
-                img.convert("RGBA").save(buf, "PNG")
+                img.save(buf, "PNG", optimize=True)
             data = buf.getvalue()
     return f"data:{mime};base64,{base64.b64encode(data).decode()}", width
 
