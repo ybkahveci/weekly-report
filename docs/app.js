@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -560,6 +560,8 @@ function sectionsOf(bodyMd) {
 }
 
 const isEmptyItem = ln => /^\s*(?:[-*+]|\d+[.)])?\s*$/.test(ln);
+/* New week's default for every project; replaced by hand where work happened */
+const NO_ACTIVITY = '- No activities this week';
 
 function newProjectLines(name) {
   const L = settings.labels;
@@ -570,7 +572,9 @@ function newProjectLines(name) {
 function scaffold(previous, week) {
   const out = ['---', `week: ${week}`, 'productivity:', '---', ''];
   if (previous === null) {
-    out.push(...newProjectLines('Project name'),
+    const lines = newProjectLines('Project name');
+    lines[lines.indexOf('- ')] = NO_ACTIVITY;
+    out.push(...lines,
       '## Others - 0 days', '- Weekly meeting', '- Weekly report', '');
     return out.join('\n');
   }
@@ -581,9 +585,7 @@ function scaffold(previous, week) {
     out.push('');
     const sections = sectionsOf(p.bodyMd);
     if (Object.keys(sections).length) {
-      /* last week's plan is the draft of this week's work: keep what got done */
-      const planned = (sections.upcoming || []).filter(ln => !isEmptyItem(ln));
-      out.push(`${L['this week']}:`, ...(planned.length ? planned : ['- ']), '');
+      out.push(`${L['this week']}:`, NO_ACTIVITY, '');
       out.push(`${L.status}:`,
         ...(sections.status?.length ? sections.status : ['- Ongoing']), '');
       out.push(`${L.upcoming}:`,
@@ -749,9 +751,6 @@ function tidyReport(text) {
 function lintReport(report) {
   const out = [];
   const tw = settings.labels['this week'];
-  /* a fresh New week has every project at 0 days with drafted items; the
-     total check already covers that, so per-project hints wait for days */
-  const daysEntered = report.projects.some(p => p.days > 0);
   const noCode = md => {
     let fence = false;
     return md.split('\n').filter(ln => {
@@ -765,7 +764,7 @@ function lintReport(report) {
     if (done) {
       const work = done[1].split('\n')
         .filter(ln => !isEmptyItem(ln) && !/no activit/i.test(ln));
-      if (p.days === 0 && work.length && daysEntered) {
+      if (p.days === 0 && work.length) {
         out.push(`${p.name}: 0 days, but work is listed under "${tw}"`);
       } else if (p.days > 0 && !work.length) {
         out.push(`${p.name}: ${formatDays(p.days)}, but nothing is listed under "${tw}"`);
@@ -2538,14 +2537,12 @@ $('new').addEventListener('click', async () => {
     const previous = files.length ? await readFile(files[0]) : null;
     await writeFile(name, scaffold(previous, week));
     await loadList(name);
+    /* the first placeholder is selected, so typing replaces it */
     const ed = $('editor');
-    const marker = `${settings.labels['this week']}:\n`;
-    const at = ed.value.indexOf(marker);
+    const at = ed.value.indexOf(NO_ACTIVITY);
     if (at >= 0) {
-      let pos = ed.value.indexOf('\n', at + marker.length);
-      if (pos === -1) pos = ed.value.length;
       ed.focus();
-      ed.setSelectionRange(pos, pos);
+      ed.setSelectionRange(at + 2, at + NO_ACTIVITY.length);
     }
   } catch (e) { alert(e.message); }
 });

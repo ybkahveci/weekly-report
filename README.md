@@ -163,9 +163,9 @@ writing checks: repeated words, empty bullets, and projects whose day
 count disagrees with their *This week* items.
 
 **New week** scaffolds the next report from the latest one: projects and
-subtitles carry over, last week's *Upcoming* items become the draft of
-*This week* (delete what didn't happen), *Status* and *Upcoming* are
-kept, day counts reset to 0.
+subtitles carry over, *This week* starts as "No activities this week" in
+every project (replace it where work happened), *Status* and *Upcoming*
+are kept, day counts reset to 0.
 
 **Copy email** (Ctrl+Shift+C) puts the rendered HTML on the clipboard with
 images embedded; the compose window converts them to proper inline
