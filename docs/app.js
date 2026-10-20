@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -118,7 +118,7 @@ const esc = s => String(s)
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const fillTemplate = (tpl, vars) =>
-  tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+  tpl.replace(/\{(\w+)\}/g, (m, k) => (k.toLowerCase() in vars ? vars[k.toLowerCase()] : m));
 
 /* sums of decimal day counts pick up float noise (2.1 + 2.2) */
 const fmtNum = n => String(Math.round(n * 100) / 100);
@@ -144,7 +144,13 @@ const DEFAULT_SETTINGS = {
 let settings = structuredClone(DEFAULT_SETTINGS);
 let LABEL_RE = null;
 
+/* subjects that earlier versions saved as the default; loading maps them to
+   the current default, which those users never chose against */
+const OLD_DEFAULT_SUBJECTS = ['Weekly Report \u2014 Week {week}', 'Weekly Report: Week {week}'];
+
 function applySettings(raw = {}) {
+  raw = { ...raw };
+  if (OLD_DEFAULT_SUBJECTS.includes(raw.subject)) delete raw.subject;
   settings = { ...structuredClone(DEFAULT_SETTINGS), ...raw };
   settings.labels = { ...DEFAULT_SETTINGS.labels, ...raw.labels };
   for (const role of ROLES) {
@@ -158,6 +164,21 @@ function applySettings(raw = {}) {
   for (const role of ROLES) names.add(settings.labels[role].toLowerCase());
   LABEL_RE = new RegExp(`^(${[...names].map(escapeRe).join('|')})\\s*:(.*)$`, 'i');
   buildEmailStyle();
+}
+
+/* only what differs from the defaults, so a later default still applies */
+function changedSettings() {
+  const out = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === 'labels') {
+      const labels = Object.fromEntries(Object.entries(value)
+        .filter(([role, label]) => label !== DEFAULT_SETTINGS.labels[role]));
+      if (Object.keys(labels).length) out.labels = labels;
+    } else if (value !== DEFAULT_SETTINGS[key]) {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function labelRole(text) {
@@ -1335,7 +1356,7 @@ async function loadSettings() {
 
 async function saveSettings(raw) {
   applySettings(raw);
-  await writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n');
+  await writeFile(SETTINGS_FILE, JSON.stringify(changedSettings(), null, 2) + '\n');
 }
 
 async function browserStorageDir() {
