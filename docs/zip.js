@@ -1,5 +1,5 @@
 /*
- * zip — minimal zip writer and reader for report export and import.
+ * zip: minimal zip writer and reader for report export and import.
  *
  * The writer only stores: reports are small text and images are already
  * compressed, so a deflater would add code for little gain. The reader also

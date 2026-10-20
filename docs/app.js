@@ -1,5 +1,5 @@
 /*
- * weekly-report web — static browser port of the weekly report editor.
+ * weekly-report web: static browser port of the weekly report editor.
  *
  * Runs entirely client-side (GitHub Pages): Markdown is rendered to
  * Outlook-safe HTML with marked + highlight.js, and reports are read and
@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -110,7 +110,7 @@ const MARKS = {
   i: ['*'],
   u: ['<u>', '</u>'],
 };
-const HEAD_DAYS_RE = /^(.+?)\s+[—–-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
+const HEAD_DAYS_RE = /^(.+?)\s+[\u2014\u2013-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
 const FENCE_RE = /^\s*(?:```|~~~)/;
 
 const esc = s => String(s)
@@ -133,7 +133,7 @@ const DEFAULT_SETTINGS = {
   name: '',
   greeting: 'Dear all,\n\nThis is my weekly progress report.',
   signature: '',
-  subject: 'Weekly Report — Week {week}',
+  subject: 'Weekly Report: Week {week}',
   to: '',
   cc: '',
   labels: { 'this week': 'This week', status: 'Status', upcoming: 'Upcoming' },
@@ -208,7 +208,7 @@ function parseReport(text) {
     } else {
       name = item.head;
       days = null;
-      report.warnings.push(`No "— N days" found in heading "${item.head}"`);
+      report.warnings.push(`No day count (" - N days") in heading "${item.head}"`);
     }
     const lines = item.lines;
     while (lines.length && !lines[0].trim()) lines.shift();
@@ -342,7 +342,7 @@ async function embedImage(file) {
   try {
     const width = Math.min(bmp.width, MAX_IMG_WIDTH);
     const target = MAX_IMG_WIDTH * EMBED_SCALE;
-    /* Anything that already fits the pixel budget is embedded byte for byte —
+    /* Anything that already fits the pixel budget is embedded byte for byte;
        re-encoding it would only throw detail away. */
     if (bmp.width <= target) return { uri: await fileDataUri(file), width };
     const canvas = document.createElement('canvas');
@@ -496,7 +496,7 @@ async function renderEmail(report) {
         `color:${MUTED};margin:2px 0 0 0;">` +
         `<i><font color="${MUTED}">${esc(p.subtitle)}</font></i></div>`
       : '';
-    const daysTxt = p.days !== null ? formatDays(p.days) : '—';
+    const daysTxt = p.days !== null ? formatDays(p.days) : 'n/a';
     const chip =
       '<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>' +
       '<td bgcolor="#ffffff" style="background-color:#ffffff;' +
@@ -535,8 +535,8 @@ function footer() {
     '<tr><td height="16" style="font-size:1px;line-height:16px;">&nbsp;</td></tr>' +
     `<tr><td style="font-family:${FONT};font-size:12px;line-height:1.45;` +
     `color:${MUTED};border-top:1px solid ${RULE};padding:8px 0 0 0;">` +
-    `<font color="${MUTED}">Made with weekly-report — write in Markdown, ` +
-    `paste into Outlook: </font><a href="${APP_URL}" style="color:${ES.link};">` +
+    `<font color="${MUTED}">Made with weekly-report (write in Markdown, ` +
+    `paste into Outlook): </font><a href="${APP_URL}" style="color:${ES.link};">` +
     `<font color="${ES.link}">${APP_URL}</font></a></td></tr></table>`;
 }
 
@@ -563,7 +563,7 @@ const isEmptyItem = ln => /^\s*(?:[-*+]|\d+[.)])?\s*$/.test(ln);
 
 function newProjectLines(name) {
   const L = settings.labels;
-  return [`## ${name} — 0 days`, `${L['this week']}:`, '- ', '',
+  return [`## ${name} - 0 days`, `${L['this week']}:`, '- ', '',
     `${L.status}:`, '- Ongoing', '', `${L.upcoming}:`, '- ', ''];
 }
 
@@ -571,12 +571,12 @@ function scaffold(previous, week) {
   const out = ['---', `week: ${week}`, 'productivity:', '---', ''];
   if (previous === null) {
     out.push(...newProjectLines('Project name'),
-      '## Others — 0 days', '- Weekly meeting', '- Weekly report', '');
+      '## Others - 0 days', '- Weekly meeting', '- Weekly report', '');
     return out.join('\n');
   }
   const L = settings.labels;
   for (const p of parseReport(previous).projects) {
-    out.push(`## ${p.name} — 0 days`);
+    out.push(`## ${p.name} - 0 days`);
     if (p.subtitle) out.push(`> ${p.subtitle}`);
     out.push('');
     const sections = sectionsOf(p.bodyMd);
@@ -688,13 +688,13 @@ function rangeOptions(files) {
 }
 
 function summaryMarkdown(hist, rangeLabel) {
-  const out = [`# Summary — ${rangeLabel}`, '',
+  const out = [`# Summary: ${rangeLabel}`, '',
     `${hist.reports} report${hist.reports === 1 ? '' : 's'} · ` +
     `${formatDays(hist.grandTotal)}`, ''];
   for (const p of hist.projects) {
     const share = hist.grandTotal
       ? ` (${Math.round(100 * p.total / hist.grandTotal)}%)` : '';
-    out.push(`## ${p.name} — ${formatDays(p.total)}${share}`, '');
+    out.push(`## ${p.name}: ${formatDays(p.total)}${share}`, '');
     for (const w of p.weeks) {
       if (w.thisWeek.trim()) out.push(`**Week ${w.week}**`, '', w.thisWeek.trim(), '');
     }
@@ -816,7 +816,7 @@ function timelineEntry(title, sub, md, needle) {
 }
 
 function renderTimeline(project, hist) {
-  $('tl-title').textContent = `Timeline — ${project.name}`;
+  $('tl-title').textContent = `Timeline: ${project.name}`;
   const sel = $('mergesel');
   const others = hist.projects.filter(p => p !== project);
   $('mergebar').hidden = others.length === 0;
@@ -835,13 +835,13 @@ function renderTimeline(project, hist) {
   for (const w of project.weeks) {
     tl.appendChild(timelineEntry(`Week ${w.week}`,
       `${w.file.replace(/\.md$/, '')} · ` +
-      (w.days !== null ? formatDays(w.days) : '—'), w.thisWeek));
+      (w.days !== null ? formatDays(w.days) : 'n/a'), w.thisWeek));
   }
 }
 
 function renderSearch(hist, query) {
   const needle = query.toLowerCase();
-  $('tl-title').textContent = `Search — "${query}"`;
+  $('tl-title').textContent = `Search: "${query}"`;
   $('mergebar').hidden = true;
   const hits = [];
   for (const p of hist.projects) {
@@ -882,7 +882,7 @@ function renderSummaryTable(hist) {
       mk('num', String(p.weeks.length)),
       mk('num', fmtNum(p.total)),
       mk('num', hist.grandTotal
-        ? `${Math.round(100 * p.total / hist.grandTotal)}%` : '—'),
+        ? `${Math.round(100 * p.total / hist.grandTotal)}%` : '0%'),
       mk('', track),
     );
     tr.classList.toggle('sel', !hv.query && p.key === hv.selected);
@@ -1273,7 +1273,7 @@ async function refresh() {
   state.renderedText = text;
   const sizeKb = new Blob([html]).size / 1024;
   if (sizeKb > 95) {
-    warnings.push('Email exceeds ~100 KB — Gmail may clip the message');
+    warnings.push('Email exceeds ~100 KB; Gmail may clip the message');
   }
   const banner = warnings.map(w =>
     '<div style="background:#fff8e1;border:1px solid #f0dc9a;color:#6b5d1f;' +
@@ -1288,7 +1288,7 @@ async function refresh() {
     '<div style="max-width:700px;margin:0 auto;">' + banner +
     '<div style="color:#8a94a6;font:12px system-ui;text-align:center;' +
     `margin:0 0 10px 0;">Email size: ${sizeKb.toFixed(0)} KB` +
-    ' — preview approximates Outlook rendering</div>' +
+    ' · preview approximates Outlook rendering</div>' +
     '<div style="background:#ffffff;border:1px solid #dce0e6;border-radius:6px;' +
     `padding:26px 30px;">${html}</div>` +
     '</div></body></html>';
@@ -1398,7 +1398,7 @@ function adjustDays(idx, delta) {
   const days = Math.max(0, (m ? parseFloat(m[2].replace(',', '.')) : 0) + delta);
   const start = lineToChar(lines, s.start);
   replaceRange(ed, start, start + lines[s.start].length,
-    `## ${name} — ${formatDays(days)}`);
+    `## ${name} - ${formatDays(days)}`);
 }
 function jumpTo(startLine) {
   const ed = $('editor');
@@ -1440,7 +1440,7 @@ function renderOutline() {
       allParsed = false;
       days.className = 'obadge';
       days.textContent = '!';
-      days.title = 'No "— N days" in this heading';
+      days.title = 'No day count (" - N days") in this heading';
     }
     const up = button('↑', 'Move up (Alt+Up)', () => moveSection(i, -1));
     up.disabled = i === 0;
@@ -2070,19 +2070,19 @@ function copyEmail() {
     setStatus('Rendering…');
     clearTimeout(state.saveTimer);
     (state.dirty ? save() : refresh()).then(
-      () => setStatus('Updated — click Copy email again'),
+      () => setStatus('Updated: click Copy email again'),
       e => setStatus('Render failed: ' + e.message));
     return;
   }
   if (copyRich(html, plain, $('editor'))) {
-    setStatus('Copied — paste into your mail compose window');
+    setStatus('Copied: paste into your mail compose window');
     flashButton($('copy'), 'Copied ✓');
   } else {
     navigator.clipboard.write([new ClipboardItem({
       'text/html': new Blob([html], { type: 'text/html' }),
       'text/plain': new Blob([plain], { type: 'text/plain' }),
     })]).then(() => {
-      setStatus('Copied (fallback path — styling may degrade)');
+      setStatus('Copied (fallback path, styling may degrade)');
       flashButton($('copy'), 'Copied ✓');
     }, e => setStatus('Copy failed: ' + e.message));
   }
@@ -2106,7 +2106,7 @@ $('eml').addEventListener('click', async () => {
     const eml = buildEml(state.lastEmail, emailSubject());
     download(state.current.replace(/\.md$/, '.eml'),
       new Blob([eml], { type: 'message/rfc822' }));
-    setStatus('Saved .eml — open it to get a ready draft in Outlook');
+    setStatus('Saved .eml: open it to get a ready draft in Outlook');
   } catch (e) {
     setStatus('Export failed: ' + e.message);
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# weekly_report — local web editor that renders Markdown weekly reports as
+# weekly_report: local web editor that renders Markdown weekly reports as
 # Outlook-safe HTML email.
 #
 # Classic Outlook renders mail with the Word engine: no <style> blocks, no
@@ -86,8 +86,8 @@ FOOTER = (
     '<tr><td height="16" style="font-size:1px;line-height:16px;">&nbsp;</td></tr>'
     f'<tr><td style="font-family:{FONT};font-size:12px;line-height:1.45;'
     f'color:{MUTED};border-top:1px solid {RULE};padding:8px 0 0 0;">'
-    f'<font color="{MUTED}">Made with weekly-report — write in Markdown, '
-    f'paste into Outlook: </font><a href="{APP_URL}" style="{A_STYLE}">'
+    f'<font color="{MUTED}">Made with weekly-report (write in Markdown, '
+    f'paste into Outlook): </font><a href="{APP_URL}" style="{A_STYLE}">'
     f'<font color="#1f6fb2">{APP_URL}</font></a></td></tr></table>'
 )
 
@@ -97,7 +97,8 @@ MD_CONFIGS = {"codehilite": {"noclasses": True, "pygments_style": "default"}}
 LABEL_RE = re.compile(r"^(this week|status|upcoming)\s*:(.*)$", re.IGNORECASE)
 LIST_RE = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
 HEAD_DAYS_RE = re.compile(
-    r"^(?P<name>.+?)\s+[—–-]+\s+(?P<days>\d+(?:[.,]\d+)?)\s*days?\s*$", re.IGNORECASE
+    r"^(?P<name>.+?)\s+[\u2014\u2013-]+\s+(?P<days>\d+(?:[.,]\d+)?)\s*days?\s*$",
+    re.IGNORECASE,
 )
 CODEBLOCK_RE = re.compile(
     r'<div class="codehilite"[^>]*>\s*<pre[^>]*>'
@@ -162,7 +163,9 @@ def parse_report(text: str) -> Report:
             days = float(match.group("days").replace(",", "."))
         else:
             name, days = item["head"], None
-            report.warnings.append(f'No "— N days" found in heading "{item["head"]}"')
+            report.warnings.append(
+                f'No day count (" - N days") in heading "{item["head"]}"'
+            )
         lines = item["lines"]
         while lines and not lines[0].strip():
             lines.pop(0)
@@ -464,7 +467,7 @@ def render_email(report: Report, embed: bool) -> tuple[str, list[str]]:
             if p.subtitle
             else ""
         )
-        days_txt = format_days(p.days) if p.days is not None else "—"
+        days_txt = format_days(p.days) if p.days is not None else "n/a"
         chip = (
             '<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>'
             '<td bgcolor="#ffffff" style="background-color:#ffffff;'
@@ -522,7 +525,7 @@ def scaffold(previous: str | None, week: int) -> str:
     out = ["---", f"week: {week}", "productivity:", "---", ""]
     if previous is None:
         out += [
-            "## Project name — 0 days",
+            "## Project name - 0 days",
             "This week:",
             "- ",
             "",
@@ -532,7 +535,7 @@ def scaffold(previous: str | None, week: int) -> str:
             "Upcoming:",
             "- ",
             "",
-            "## Others — 0 days",
+            "## Others - 0 days",
             "- Weekly meeting",
             "- Weekly report",
             "",
@@ -540,7 +543,7 @@ def scaffold(previous: str | None, week: int) -> str:
         return "\n".join(out)
 
     for p in parse_report(previous).projects:
-        out.append(f"## {p.name} — 0 days")
+        out.append(f"## {p.name} - 0 days")
         if p.subtitle:
             out.append(f"> {p.subtitle}")
         out.append("")
@@ -642,7 +645,7 @@ def preview() -> Response:
     size_kb = len(email_html.encode()) / 1024
     size_note = f"Email size: {size_kb:.0f} KB"
     if size_kb > 95:
-        warnings.append("Email exceeds ~100 KB — Gmail may clip the message")
+        warnings.append("Email exceeds ~100 KB; Gmail may clip the message")
     banner = "".join(
         '<div style="background:#fff8e1;border:1px solid #f0dc9a;color:#6b5d1f;'
         "border-radius:4px;padding:7px 12px;margin:0 0 8px 0;"
@@ -655,7 +658,7 @@ def preview() -> Response:
         '<div style="max-width:700px;margin:0 auto;">'
         f"{banner}"
         f'<div style="color:#8a94a6;font:12px system-ui;text-align:center;'
-        f'margin:0 0 10px 0;">{size_note} — preview approximates Outlook rendering'
+        f'margin:0 0 10px 0;">{size_note} · preview approximates Outlook rendering'
         "</div>"
         '<div style="background:#ffffff;border:1px solid #dce0e6;border-radius:6px;'
         f'padding:26px 30px;">{preview_html}</div>'
@@ -728,7 +731,7 @@ main { flex: 1; display: flex; min-height: 0; }
 </header>
 <main>
   <aside id="outline"
-         title="Project order — arrows move, Alt+Up/Down in the editor">
+         title="Project order: arrows move, Alt+Up/Down in the editor">
     <div class="ohead">Projects</div>
     <div id="olist"></div>
   </aside>
@@ -760,7 +763,7 @@ async function loadList(preferred) {
     el.value = current;
     await openFile(current);
   } else {
-    setStatus('No reports yet — click "New week"');
+    setStatus('No reports yet: click "New week"');
   }
 }
 async function openFile(name) {
@@ -862,7 +865,7 @@ function renderOutline() {
     const row = document.createElement('div');
     row.className = 'oitem';
     const name = document.createElement('span');
-    name.textContent = s.name.replace(/\s+[—–-]+\s+\d.*$/, '');
+    name.textContent = s.name.replace(/\s+[\u2014\u2013-]+\s+\d.*$/, '');
     name.onclick = () => jumpTo(s.start);
     const up = document.createElement('button');
     up.textContent = '↑';
@@ -952,13 +955,13 @@ $('copy').addEventListener('click', () => {
     return;
   }
   if (copyRich(lastEmail, plain)) {
-    setStatus('Copied — paste into your mail compose window');
+    setStatus('Copied: paste into your mail compose window');
   } else {
     navigator.clipboard.write([new ClipboardItem({
       'text/html': new Blob([lastEmail], { type: 'text/html' }),
       'text/plain': new Blob([plain], { type: 'text/plain' }),
     })]).then(
-      () => setStatus('Copied (fallback path — styling may degrade)'),
+      () => setStatus('Copied (fallback path, styling may degrade)'),
       e => setStatus('Copy failed: ' + e.message));
   }
   if (dirty) {
@@ -1006,7 +1009,7 @@ loadList().catch(e => setStatus(e.message));
 def main() -> None:
     global REPORTS_DIR
     parser = argparse.ArgumentParser(
-        description="Weekly report editor — Markdown in, Outlook-safe HTML out"
+        description="Weekly report editor: Markdown in, Outlook-safe HTML out"
     )
     parser.add_argument(
         "--dir",

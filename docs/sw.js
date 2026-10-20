@@ -1,5 +1,5 @@
 /*
- * sw — offline cache for the weekly-report web app.
+ * sw: offline cache for the weekly-report web app.
  *
  * Network first, so a deploy is picked up on the next load; the cache only
  * answers when offline. Matching ignores the ?v= cache-buster, so this file

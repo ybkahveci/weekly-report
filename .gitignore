@@ -1,4 +1,4 @@
-# Report content is internal — never commit it to the (public) repo.
+# Report content is internal; never commit it to the (public) repo.
 weekly-reports/
 
 .venv/
