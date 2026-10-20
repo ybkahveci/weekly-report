@@ -105,8 +105,9 @@ Upcoming:
 ## Settings (web)
 
 Name, greeting, signature, subject template (`{week}`, `{year}`, `{name}`),
-To/Cc for the `.eml` download, section names, email color theme, density,
-and working days per week. Stored as `.weekly-report.json` next to the
+To/Cc for the `.eml` download, section names, email color theme, section
+label style (tags, the default, or colored sections), density, and working
+days per week. Stored as `.weekly-report.json` next to the
 reports, so they sync with the folder.
 
 ## History

@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v24';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -44,11 +44,15 @@ const LIST_MARKERS = {
 };
 const APP_URL = 'https://ybkahveci.github.io/weekly-report/';
 
+/* tag: background of the section-label tags, a light step of the accent */
 const EMAIL_THEMES = {
-  navy: { label: 'Navy', accent: '#1f3864', soft: '#f2f4f8', link: '#1f6fb2' },
-  teal: { label: 'Teal', accent: '#0b5563', soft: '#edf5f6', link: '#0b7285' },
-  graphite: { label: 'Graphite', accent: '#2f3a48', soft: '#f3f4f6', link: '#2d6cdf' },
+  navy: { label: 'Navy', accent: '#1f3864', soft: '#f2f4f8', link: '#1f6fb2', tag: '#e3eaf5' },
+  teal: { label: 'Teal', accent: '#0b5563', soft: '#edf5f6', link: '#0b7285', tag: '#dcedef' },
+  graphite: { label: 'Graphite', accent: '#2f3a48', soft: '#f3f4f6', link: '#2d6cdf', tag: '#e4e7eb' },
 };
+/* per-section colors for the "colors" label style; each is above 5:1 on white */
+const ROLE_COLORS = { 'this week': '#1d7a3e', status: '#1f5fbf', upcoming: '#9a5b00' };
+const LABEL_STYLES = ['chips', 'colors'];
 
 /* rebuilt whenever settings change: Outlook needs every style inline, so
    theme and density cannot live in a stylesheet */
@@ -139,6 +143,7 @@ const DEFAULT_SETTINGS = {
   labels: { 'this week': 'This week', status: 'Status', upcoming: 'Upcoming' },
   theme: 'navy',
   density: 'comfortable',
+  labelStyle: 'chips',
   weekDays: 5,
 };
 let settings = structuredClone(DEFAULT_SETTINGS);
@@ -157,6 +162,7 @@ function applySettings(raw = {}) {
     settings.labels[role] =
       String(settings.labels[role]).trim() || DEFAULT_SETTINGS.labels[role];
   }
+  if (!LABEL_STYLES.includes(settings.labelStyle)) settings.labelStyle = DEFAULT_SETTINGS.labelStyle;
   const wd = Number(settings.weekDays);
   settings.weekDays = Number.isFinite(wd) && wd >= 0 ? wd : DEFAULT_SETTINGS.weekDays;
   /* the English names keep matching so older reports keep their sections */
@@ -439,23 +445,43 @@ function italicize(frag) {
     .replace(/<\/(p|li)>/g, '</i></$1>');
 }
 
+/* a spacer row: the Word engine does not honor margins on tables */
+function spacer(px) {
+  return '<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>' +
+    `<td height="${px}" style="font-size:1px;line-height:${px}px;">&nbsp;</td></tr></table>`;
+}
+
+/* a table cell, since Word drops padding and background on inline spans */
+function sectionTag(role) {
+  return '<table cellpadding="0" cellspacing="0" border="0"><tr>' +
+    `<td bgcolor="${ES.tag}" style="${SECTION_LABEL}background-color:${ES.tag};` +
+    `padding:2px 8px;color:${ES.accent};"><b><font color="${ES.accent}">` +
+    `${esc(settings.labels[role].toUpperCase())}</font></b></td></tr></table>` + spacer(4);
+}
+
+function coloredSection(role, frag) {
+  const c = ROLE_COLORS[role];
+  return '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+    `<td style="${ES.td}border-left:3px solid ${c};padding:0 0 0 10px;">` +
+    `<p style="${SECTION_LABEL}color:${c};margin:0 0 3px 0;"><b><font color="${c}">` +
+    `${esc(settings.labels[role].toUpperCase())}</font></b></p>${frag}</td></tr></table>`;
+}
+
 async function renderBody(bodyMd, warnings) {
   if (!bodyMd.trim()) return '';
   const parts = [];
   let first = true;
-  for (const [label, content] of splitBody(bodyMd)) {
-    if (label !== null) {
-      const top = first ? '0' : '12px';
-      parts.push(`<p style="${SECTION_LABEL}margin:${top} 0 4px 0;">` +
-        `<b><font color="${MUTED}">${esc(settings.labels[label].toUpperCase())}` +
-        '</font></b></p>');
+  for (const [role, content] of splitBody(bodyMd)) {
+    let frag = content.trim() ? await mdFragment(content, warnings) : '';
+    if (role === 'this week') frag = italicize(frag);
+    if (role === null) {
+      parts.push(frag);
+    } else {
+      if (!first) parts.push(spacer(10));
+      parts.push(settings.labelStyle === 'colors'
+        ? coloredSection(role, frag) : sectionTag(role) + frag);
     }
     first = false;
-    let frag = content.trim() ? await mdFragment(content, warnings) : '';
-    if (label === 'this week') {
-      frag = italicize(frag);
-    }
-    parts.push(frag);
   }
   return parts.join('');
 }
@@ -2100,7 +2126,7 @@ $('st-export').addEventListener('click', async () => {
 const SET_FIELDS = {
   'set-name': 'name', 'set-greeting': 'greeting', 'set-signature': 'signature',
   'set-subject': 'subject', 'set-to': 'to', 'set-cc': 'cc',
-  'set-density': 'density', 'set-weekdays': 'weekDays',
+  'set-density': 'density', 'set-labelstyle': 'labelStyle', 'set-weekdays': 'weekDays',
 };
 const SET_LABELS = {
   'set-l-this': 'this week', 'set-l-status': 'status', 'set-l-upcoming': 'upcoming',
