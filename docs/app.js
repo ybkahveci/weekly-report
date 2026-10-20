@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -133,7 +133,7 @@ const DEFAULT_SETTINGS = {
   name: '',
   greeting: 'Dear all,\n\nThis is my weekly progress report.',
   signature: '',
-  subject: 'Weekly Report: Week {week}',
+  subject: 'Progress: report of Week {week}, {year} - {name}',
   to: '',
   cc: '',
   labels: { 'this week': 'This week', status: 'Status', upcoming: 'Upcoming' },
@@ -1966,7 +1966,7 @@ function emailSubject() {
     week: rep.meta.week || (period ? period.week : ''),
     year: period ? period.year : new Date().getFullYear(),
     name: settings.name,
-  }).trim();
+  }).replace(/[\s,:;·-]+$/, '');  /* an empty {name} leaves a dangling " -" */
 }
 
 function b64(bytes) {
