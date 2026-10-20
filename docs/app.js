@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v17';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -104,10 +104,14 @@ const MARKS = {
   u: ['<u>', '</u>'],
 };
 const HEAD_DAYS_RE = /^(.+?)\s+[—–-]+\s+(\d+(?:[.,]\d+)?)\s*days?\s*$/i;
+const FENCE_RE = /^\s*(?:```|~~~)/;
 
 const esc = s => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;')
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/* sums of decimal day counts pick up float noise (2.1 + 2.2) */
+const fmtNum = n => String(Math.round(n * 100) / 100);
 
 /* ------------------------------------------------------------------ parsing */
 
@@ -128,8 +132,10 @@ function parseReport(text) {
 
   const raw = [];
   let current = null;
+  let inFence = false;
   for (const line of body.split('\n')) {
-    if (line.startsWith('## ')) {
+    if (FENCE_RE.test(line)) inFence = !inFence;
+    if (!inFence && line.startsWith('## ')) {
       current = { head: line.slice(3).trim(), lines: [] };
       raw.push(current);
     } else if (current) {
@@ -176,9 +182,7 @@ function splitBody(text) {
 
   for (const line of text.split('\n')) {
     const stripped = line.trim();
-    if (stripped.startsWith('```') || stripped.startsWith('~~~')) {
-      inFence = !inFence;
-    }
+    if (FENCE_RE.test(line)) inFence = !inFence;
     const m = (inFence || LIST_RE.test(line)) ? null : stripped.match(LABEL_RE);
     if (m) {
       flush();
@@ -194,9 +198,16 @@ function splitBody(text) {
 
 /* ---------------------------------------------------------------- rendering */
 
+/* 4-column stops like python-markdown; each match starts at a stop, so the
+   pad only depends on the match itself */
+const expandTabs = s => s.replace(/[^\t\n]*\t/g,
+  m => m.slice(0, -1) + ' '.repeat(4 - (m.length - 1) % 4));
+
 function highlightAndHarden(container) {
   for (const pre of [...container.querySelectorAll('pre')]) {
     const code = pre.querySelector('code') || pre;
+    /* Word collapses tabs to a single space */
+    code.textContent = expandTabs(code.textContent);
     const langCls = [...code.classList].find(c => c.startsWith('language-'));
     const lang = langCls ? langCls.slice(9) : null;
     if (lang && hljs.getLanguage(lang)) {
@@ -361,7 +372,8 @@ async function renderBody(bodyMd, warnings) {
 }
 
 function formatDays(days) {
-  return `${days} ${days === 1 ? 'day' : 'days'}`;
+  const n = fmtNum(days);
+  return `${n} ${n === '1' ? 'day' : 'days'}`;
 }
 
 async function renderEmail(report) {
@@ -374,13 +386,14 @@ async function renderEmail(report) {
     if (Number.isNaN(d)) {
       warnings.push(`Frontmatter days is not a number: ${declared}`);
     } else if (Math.abs(d - total) > 1e-9) {
-      warnings.push(`Frontmatter days: ${declared} != sum of project days (${total})`);
+      warnings.push(
+        `Frontmatter days: ${declared} != sum of project days (${fmtNum(total)})`);
     }
   }
 
   const summary = [
     ['Week', report.meta.week || ''],
-    ['Total working days', String(total)],
+    ['Total working days', fmtNum(total)],
   ];
   if (report.meta.productivity) summary.push(['Productivity', report.meta.productivity]);
   const cells = summary.map(([label, value], i) => {
@@ -618,7 +631,7 @@ async function showHistory() {
 
   document.getElementById('hv-meta').textContent =
     `${hist.reports} report${hist.reports === 1 ? '' : 's'} · ` +
-    `${hist.grandTotal} days total`;
+    `${formatDays(hist.grandTotal)} total`;
 
   const tbody = document.getElementById('hsum-body');
   tbody.innerHTML = '';
@@ -634,7 +647,7 @@ async function showHistory() {
     tr.append(
       mk('hname', p.name),
       mk('num', String(p.weeks.length)),
-      mk('num', String(p.total)),
+      mk('num', fmtNum(p.total)),
       mk('num', hist.grandTotal
         ? `${Math.round(100 * p.total / hist.grandTotal)}%` : '—'),
     );
@@ -676,7 +689,8 @@ function isoWeek(d) {
 /* --------------------------------------------------------- folder + storage */
 
 const state = {
-  dir: null, current: null, dirty: false, saveTimer: null, lastEmail: null,
+  dir: null, current: null, dirty: false, saveTimer: null,
+  lastEmail: null, renderedText: null, renderGen: 0,
 };
 
 function idbOpen() {
@@ -753,8 +767,9 @@ async function loadList(preferred) {
 }
 
 async function openFile(name) {
+  const text = await readFile(name);
   state.current = name;
-  $('editor').value = await readFile(name);
+  $('editor').value = text;
   state.dirty = false;
   $('dirty').hidden = true;
   renderOutline();
@@ -762,9 +777,13 @@ async function openFile(name) {
 }
 
 async function refresh() {
-  const report = parseReport($('editor').value);
-  const { html, warnings } = await renderEmail(report);
+  /* image embedding awaits, so an older render can finish after a newer one */
+  const gen = ++state.renderGen;
+  const text = $('editor').value;
+  const { html, warnings } = await renderEmail(parseReport(text));
+  if (gen !== state.renderGen) return;
   state.lastEmail = html;
+  state.renderedText = text;
   const sizeKb = new Blob([html]).size / 1024;
   if (sizeKb > 95) {
     warnings.push('Email exceeds ~100 KB — Gmail may clip the message');
@@ -788,6 +807,7 @@ async function refresh() {
   const y = fr.contentWindow ? fr.contentWindow.scrollY : 0;
   fr.onload = () => {
     fr.contentWindow.scrollTo(0, y);
+    blockFileDrops(fr.contentWindow);
     fr.contentWindow.addEventListener('wheel', ev => {
       if (!ev.ctrlKey) return;
       ev.preventDefault();
@@ -811,11 +831,21 @@ function setPreviewZoom(z) {
 
 async function save() {
   if (!state.current) return;
-  await writeFile(state.current, $('editor').value);
-  state.dirty = false;
-  $('dirty').hidden = true;
-  setStatus('Saved');
+  const text = $('editor').value;
+  await writeFile(state.current, text);
+  /* typing during the write leaves a newer autosave pending */
+  if ($('editor').value === text) {
+    state.dirty = false;
+    $('dirty').hidden = true;
+    setStatus('Saved');
+  }
   await refresh();
+}
+
+/* before anything that changes state.current or state.dir */
+async function flushSave() {
+  clearTimeout(state.saveTimer);
+  if (state.dirty) await save();
 }
 
 function scheduleSave() {
@@ -835,8 +865,7 @@ function splitSections(text) {
   const sections = [];
   let fence = false, cur = null;
   lines.forEach((ln, i) => {
-    const t = ln.trim();
-    if (t.startsWith('```') || t.startsWith('~~~')) fence = !fence;
+    if (FENCE_RE.test(ln)) fence = !fence;
     if (!fence && ln.startsWith('## ')) {
       if (cur) cur.end = i;
       cur = { start: i, end: lines.length, name: ln.slice(3).trim() };
@@ -921,7 +950,7 @@ function renderOutline() {
     el.appendChild(row);
   });
   $('ototal').textContent = sections.length
-    ? `Total: ${total} ${total === 1 ? 'day' : 'days'}` +
+    ? `Total: ${formatDays(total)}` +
       (allParsed ? '' : ' (incomplete)')
     : '';
 }
@@ -944,13 +973,18 @@ function replaceRange(ed, start, end, text, mode = 'end') {
 }
 
 function indentSelection(ed, dir) {
-  const start = ed.value.lastIndexOf('\n', ed.selectionStart - 1) + 1;
-  let end = ed.value.indexOf('\n', ed.selectionEnd);
+  const { selectionStart: s, selectionEnd: e } = ed;
+  const start = ed.value.lastIndexOf('\n', s - 1) + 1;
+  let end = ed.value.indexOf('\n', e);
   if (end === -1) end = ed.value.length;
   const block = ed.value.slice(start, end);
   const out = block.split('\n').map(ln =>
     dir > 0 ? INDENT + ln : ln.replace(/^ {1,4}/, '')).join('\n');
   replaceRange(ed, start, end, out, 'select');
+  if (s === e) {
+    const pos = Math.max(start, s + out.length - block.length);
+    ed.setSelectionRange(pos, pos);
+  }
 }
 
 function wrapSelection(ed, open, close = open) {
@@ -1134,7 +1168,10 @@ async function init() {
 
 $('editor').addEventListener('input', scheduleSave);
 $('editor').addEventListener('keydown', editorKeydown);
-$('file').addEventListener('change', e => openFile(e.target.value));
+$('file').addEventListener('change', e => {
+  flushSave().then(() => openFile(e.target.value))
+    .catch(err => setStatus('Open failed: ' + err.message));
+});
 $('rename').addEventListener('click', async () => {
   if (!state.current) return;
   let name = prompt('New file name:', state.current);
@@ -1145,6 +1182,8 @@ $('rename').addEventListener('click', async () => {
     return;
   }
   try {
+    /* a pending autosave would recreate the old file after removeEntry */
+    await flushSave();
     if (await fileExists(name)) {
       alert(`${name} already exists`);
       return;
@@ -1230,9 +1269,19 @@ window.addEventListener('beforeunload', e => {
     e.returnValue = '';
   }
 });
+/* a file dropped outside the editor would otherwise open in place of the app */
+function blockFileDrops(win) {
+  for (const type of ['dragover', 'drop']) {
+    win.addEventListener(type, e => {
+      if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+    });
+  }
+}
+blockFileDrops(window);
 $('folder').addEventListener('click', async () => {
   try {
     const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await flushSave();
     await idbSet('dir', dir);
     await start(dir);
   } catch (e) {
@@ -1273,6 +1322,7 @@ document.addEventListener('keydown', e => {
 });
 $('new').addEventListener('click', async () => {
   try {
+    await flushSave();
     const { year, week } = isoWeek(new Date());
     const name = `${year}-W${String(week).padStart(2, '0')}.md`;
     if (await fileExists(name)) {
@@ -1338,6 +1388,14 @@ $('copy').addEventListener('click', () => {
     setStatus('Nothing rendered yet');
     return;
   }
+  if (plain !== state.renderedText) {
+    setStatus('Rendering…');
+    clearTimeout(state.saveTimer);
+    (state.dirty ? save() : refresh()).then(
+      () => setStatus('Updated — click Copy email again'),
+      e => setStatus('Render failed: ' + e.message));
+    return;
+  }
   if (copyRich(html, plain)) {
     setStatus('Copied — paste into your mail compose window');
     flashCopied();
@@ -1349,10 +1407,7 @@ $('copy').addEventListener('click', () => {
       () => { setStatus('Copied (fallback path — styling may degrade)'); flashCopied(); },
       e => setStatus('Copy failed: ' + e.message));
   }
-  if (state.dirty) {
-    clearTimeout(state.saveTimer);
-    save().catch(e => setStatus('Save failed: ' + e.message));
-  }
+  flushSave().catch(e => setStatus('Save failed: ' + e.message));
 });
 $('editor').addEventListener('paste', e => {
   for (const item of e.clipboardData.items) {

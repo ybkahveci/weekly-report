@@ -144,8 +144,11 @@ def parse_report(text: str) -> Report:
 
     raw: list[dict] = []
     current: dict | None = None
+    in_fence = False
     for line in body.splitlines():
-        if line.startswith("## "):
+        if line.strip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+        if not in_fence and line.startswith("## "):
             current = {"head": line[3:].strip(), "lines": []}
             raw.append(current)
         elif current is not None:
