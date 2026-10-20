@@ -154,6 +154,14 @@ Tab/Shift+Tab, bolds/italicizes/underlines with Ctrl+B/I/U, and keeps all
 of it on the undo stack; press `?` (or the ? button) for the full
 shortcut list.
 
+The editor colors the report's structure (project headings, day counts,
+section labels) and switches between a monospace and a proportional font
+(Mono/Sans in the toolbar). **Tidy** gives the whole report one layout:
+blank lines around headings and labels, `-` bullets, four-space nesting,
+label names as in Settings; Ctrl+Z undoes it. The preview also lists
+writing checks: repeated words, empty bullets, and projects whose day
+count disagrees with their *This week* items.
+
 **New week** scaffolds the next report from the latest one: projects and
 subtitles carry over, last week's *Upcoming* items become the draft of
 *This week* (delete what didn't happen), *Status* and *Upcoming* are

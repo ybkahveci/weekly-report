@@ -29,6 +29,9 @@
   --chart-grid: #e1e0d9; --chart-base: #c3c2b7; --chart-tick: #898781;
   --hit-wash: rgba(31, 56, 100, .06); --mark-bg: #ffe98a;
   --shadow: 0 8px 30px rgba(0, 0, 0, .25);
+  --hl-head: #1d5bbf; --hl-days: #1d7a3e; --hl-days-bg: #e4f3e8;
+  --hl-label: #0e8196; --hl-code: #8a5a00; --hl-em: #6b3fa0;
+  --hl-sel: rgba(45, 108, 223, .22);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -44,6 +47,9 @@
     --chart-grid: #2c2c2a; --chart-base: #383835; --chart-tick: #898781;
     --hit-wash: rgba(255, 255, 255, .05); --mark-bg: #6b5800;
     --shadow: 0 8px 30px rgba(0, 0, 0, .6);
+    --hl-head: #7fb0ff; --hl-days: #5cc98a; --hl-days-bg: #1b2e23;
+    --hl-label: #4fb8cc; --hl-code: #d9a54a; --hl-em: #c39af0;
+    --hl-sel: rgba(76, 141, 255, .3);
   }
 }
 :root[data-theme="dark"] {
@@ -59,6 +65,9 @@
   --chart-grid: #2c2c2a; --chart-base: #383835; --chart-tick: #898781;
   --hit-wash: rgba(255, 255, 255, .05); --mark-bg: #6b5800;
   --shadow: 0 8px 30px rgba(0, 0, 0, .6);
+  --hl-head: #7fb0ff; --hl-days: #5cc98a; --hl-days-bg: #1b2e23;
+  --hl-label: #4fb8cc; --hl-code: #d9a54a; --hl-em: #c39af0;
+  --hl-sel: rgba(76, 141, 255, .3);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -119,16 +128,36 @@ main { flex: 1; display: flex; min-height: 0; }
          position: relative; }
 #toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 8px;
            background: var(--panel-2); border-bottom: 1px solid var(--border); }
-#toolbar button { font: 12.5px system-ui; padding: 3px 9px; border-radius: 4px;
+#toolbar button { font: 12.5px system-ui; padding: 3px 7px; border-radius: 4px;
                   border: 1px solid transparent; background: none;
                   color: var(--text-2); cursor: pointer; }
 #toolbar button:hover { background: var(--hover); border-color: var(--border-2);
                         color: var(--text); }
 .tsep { width: 1px; height: 16px; background: var(--border-2); margin: 0 5px; }
-#editor { flex: 1; border: none; outline: none; resize: none; padding: 16px;
-          font: 13px/1.55 Consolas, monospace; background: var(--editor-bg);
-          color: var(--text); }
-#empty { position: absolute; inset: 0; background: var(--editor-bg); display: flex;
+#edwrap { flex: 1; position: relative; min-height: 0; background: var(--editor-bg); }
+/* the textarea lies on the highlight layer with transparent text, so both
+   must share every metric that affects wrapping or the caret drifts */
+#editor, #edhl { position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+                 margin: 0 auto; width: 100%; max-width: calc(96ch + 32px);
+                 padding: 16px; border: 0; box-sizing: border-box;
+                 font: 13px/1.55 Consolas, monospace; letter-spacing: normal;
+                 white-space: pre-wrap; overflow-wrap: break-word; tab-size: 4;
+                 overflow-y: scroll; }
+#edwrap.sans #editor, #edwrap.sans #edhl {
+  font: 14.5px/1.6 system-ui, sans-serif; max-width: calc(76ch + 32px); }
+#edhl { color: var(--text); pointer-events: none; }
+#editor { background: transparent; color: transparent; caret-color: var(--text);
+          outline: none; resize: none; z-index: 1; }
+#editor::selection { background: var(--hl-sel); color: transparent; }
+.hl-head { color: var(--hl-head); }
+.hl-days { color: var(--hl-days); background: var(--hl-days-bg); border-radius: 3px; }
+.hl-label { color: var(--hl-label); }
+.hl-mark, .hl-sub { color: var(--muted); }
+.hl-front { color: var(--faint); }
+.hl-code { color: var(--hl-code); }
+.hl-em { color: var(--hl-em); }
+.hl-link { color: var(--accent); }
+#empty { position: absolute; inset: 0; z-index: 2; background: var(--editor-bg); display: flex;
          align-items: center; justify-content: center; padding: 24px; }
 .empty-card { max-width: 420px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
 .empty-card h2 { font-size: 17px; color: var(--title); margin: 0 0 10px; }
@@ -361,10 +390,15 @@ mark { background: var(--mark-bg); color: inherit; border-radius: 2px; padding: 
       <button id="image" title="Insert an image (or paste / drop one into the text)">Image</button>
       <span class="tsep"></span>
       <button data-act="project" title="Add a project after the one under the cursor">+ Project</button>
+      <button data-act="tidy" title="One layout for the whole report: blank lines, bullets, indentation, headings (Ctrl+Z undoes it)">Tidy</button>
       <span class="grow"></span>
+      <button id="edfont" title="Editor font: monospace or proportional"></button>
       <button id="spell" title="Toggle spell checking (English)"></button>
     </div>
-    <textarea id="editor" spellcheck="true" lang="en"></textarea>
+    <div id="edwrap">
+      <pre id="edhl" aria-hidden="true"></pre>
+      <textarea id="editor" spellcheck="true" lang="en"></textarea>
+    </div>
     <div id="empty" hidden>
       <div class="empty-card">
         <h2>No reports here yet</h2>
@@ -603,7 +637,7 @@ Upcoming:
 </div>
 <script src="vendor/marked-14.min.js"></script>
 <script src="vendor/highlight-11.min.js"></script>
-<script src="zip.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="zip.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

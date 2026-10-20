@@ -14,7 +14,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 
 /* ---------------------------------------------------------------- email CSS */
 
@@ -445,7 +445,7 @@ function formatDays(days) {
 }
 
 async function renderEmail(report) {
-  const warnings = [...report.warnings];
+  const warnings = [...report.warnings, ...lintReport(report)];
   const total = report.projects.reduce((s, p) => s + (p.days ?? 0), 0);
 
   const declared = report.meta.days;
@@ -563,7 +563,7 @@ const isEmptyItem = ln => /^\s*(?:[-*+]|\d+[.)])?\s*$/.test(ln);
 
 function newProjectLines(name) {
   const L = settings.labels;
-  return [`## ${name} - 0 days`, `${L['this week']}:`, '- ', '',
+  return [`## ${name} - 0 days`, '', `${L['this week']}:`, '- ', '',
     `${L.status}:`, '- Ongoing', '', `${L.upcoming}:`, '- ', ''];
 }
 
@@ -593,6 +593,194 @@ function scaffold(previous, week) {
     }
   }
   return out.join('\n').replace(/\n+$/, '') + '\n';
+}
+
+/* ----------------------------------------------------------- markdown tools */
+
+const hl = (cls, html) => `<span class="${cls}">${html}</span>`;
+
+function highlightInline(s) {
+  return esc(s)
+    .replace(/`[^`]+`/g, m => hl('hl-code', m))
+    .replace(/\*\*[^*]+\*\*/g, m => hl('hl-em', m))
+    .replace(/(^|[^*])(\*[^*\s][^*]*\*)(?!\*)/g, (m, pre, em) => pre + hl('hl-em', em))
+    .replace(/!?\[[^\]]*\]\([^)]*\)/g, m => hl('hl-link', m));
+}
+
+/* Colors only, never weight or style: the overlay must keep the exact glyph
+   advances of the textarea above it or the caret drifts off the text. */
+function highlightMd(text) {
+  const lines = text.split('\n');
+  let front = lines[0] === '---';
+  let fence = false;
+  return lines.map((ln, i) => {
+    if (front) {
+      if (i > 0 && ln === '---') front = false;
+      return hl('hl-front', esc(ln));
+    }
+    if (FENCE_RE.test(ln)) {
+      fence = !fence;
+      return hl('hl-code', esc(ln));
+    }
+    if (fence) return hl('hl-code', esc(ln));
+    if (ln.startsWith('## ')) {
+      const m = ln.slice(3).match(/^(.*?)(\s+[\u2014\u2013-]+\s+\d+(?:[.,]\d+)?\s*days?\s*)$/i);
+      return hl('hl-mark', '## ') + (m
+        ? hl('hl-head', esc(m[1])) + hl('hl-days', esc(m[2]))
+        : hl('hl-head', esc(ln.slice(3))));
+    }
+    if (/^\s*>/.test(ln)) return hl('hl-sub', esc(ln));
+    if (!LIST_RE.test(ln) && LABEL_RE.test(ln.trim())) {
+      const colon = ln.indexOf(':') + 1;
+      return hl('hl-label', esc(ln.slice(0, colon))) + highlightInline(ln.slice(colon));
+    }
+    const li = ln.match(/^(\s*)([-*+]|\d+[.)])(\s.*|)$/);
+    if (li) return esc(li[1]) + hl('hl-mark', esc(li[2])) + highlightInline(li[3]);
+    return highlightInline(ln);
+  }).join('\n');
+}
+
+/* One layout for every report: a blank line around headings and before
+   section labels, labels spelled as in Settings, "-" bullets indented by
+   INDENT per level, no runs of blank lines. Fenced code is left as is. */
+function tidyReport(text) {
+  const src = text.replace(/\r\n?/g, '\n').split('\n');
+  const front = [];
+  let start = 0;
+  if (src[0] === '---') {
+    const end = src.indexOf('---', 1);
+    if (end > 0) {
+      front.push(...src.slice(0, end + 1).map(l => l.trimEnd()), '');
+      start = end + 1;
+    }
+  }
+  const lines = src.slice(start);
+
+  const items = [];
+  /* indents of the open list levels: nesting is relative to the parent item,
+     since a top-level bullet may itself be indented up to three spaces */
+  let open = [];
+  let fence = false;
+  for (const raw of lines) {
+    if (FENCE_RE.test(raw)) {
+      fence = !fence;
+      items.push({ kind: 'code', text: raw.trimEnd() });
+      continue;
+    }
+    if (fence) {
+      items.push({ kind: 'code', text: raw });
+      continue;
+    }
+    const ln = raw.replace(/\t/g, INDENT).trimEnd();
+    if (!ln.trim()) {
+      items.push({ kind: 'blank' });
+      continue;
+    }
+    if (!/^\s/.test(ln) && !LIST_RE.test(ln) && !/^(?:[-*+]|\d+[.)])$/.test(ln)) open = [];
+    if (ln.startsWith('## ')) {
+      const head = ln.slice(3).trim();
+      const m = head.match(HEAD_DAYS_RE);
+      items.push({ kind: 'head', text: m
+        ? `## ${m[1].trim()} - ${formatDays(parseFloat(m[2].replace(',', '.')))}`
+        : `## ${head}` });
+      continue;
+    }
+    const lm = !LIST_RE.test(ln) && ln.trim().match(LABEL_RE);
+    if (lm) {
+      const rest = lm[2].trim();
+      items.push({ kind: 'label',
+        text: `${settings.labels[labelRole(lm[1])]}:${rest ? ` ${rest}` : ''}` });
+      continue;
+    }
+    const li = ln.match(/^( *)([-*+]|\d+[.)])(?:\s+(.*))?$/);
+    if (li) {
+      const n = li[1].length;
+      while (open.length && n < open[open.length - 1]) open.pop();
+      if (!open.length || n > open[open.length - 1]) open.push(n);
+      const level = open.length - 1;
+      const marker = /\d/.test(li[2]) ? li[2] : '-';
+      items.push({ kind: li[3] ? 'item' : 'empty',
+        text: `${INDENT.repeat(level)}${marker} ${li[3] || ''}` });
+      continue;
+    }
+    items.push({ kind: /^\s*>/.test(ln) ? 'quote' : 'text', text: ln });
+  }
+
+  /* placeholder bullets go once their section has real content; a lone one
+     stays, since "-" on its own after a line would turn it into a heading */
+  const keep = items.map(() => true);
+  let segStart = 0;
+  const closeSegment = end => {
+    const seg = items.slice(segStart, end);
+    if (seg.some(t => ['item', 'text', 'quote', 'code'].includes(t.kind))) {
+      for (let k = segStart; k < end; k++) if (items[k].kind === 'empty') keep[k] = false;
+    }
+  };
+  items.forEach((t, k) => {
+    if (t.kind === 'head' || t.kind === 'label') {
+      closeSegment(k);
+      segStart = k + 1;
+    }
+  });
+  closeSegment(items.length);
+
+  const body = [];
+  let prev = null;
+  let pendingBlank = false;
+  items.forEach((t, k) => {
+    if (!keep[k]) return;
+    if (t.kind === 'blank') {
+      pendingBlank = true;
+      return;
+    }
+    const kind = t.kind === 'quote' && prev === 'head' ? 'sub' : t.kind;
+    let blank = pendingBlank;
+    if (!body.length || kind === 'sub' || prev === 'label') blank = false;
+    else if (kind === 'head' || kind === 'label' || prev === 'head' || prev === 'sub') blank = true;
+    if (blank) body.push('');
+    body.push(t.text);
+    prev = kind;
+    pendingBlank = false;
+  });
+  return [...front, ...body].join('\n').replace(/\n*$/, '\n');
+}
+
+/* Preview-only hints for slips a spell checker misses. */
+function lintReport(report) {
+  const out = [];
+  const tw = settings.labels['this week'];
+  /* a fresh New week has every project at 0 days with drafted items; the
+     total check already covers that, so per-project hints wait for days */
+  const daysEntered = report.projects.some(p => p.days > 0);
+  const noCode = md => {
+    let fence = false;
+    return md.split('\n').filter(ln => {
+      if (FENCE_RE.test(ln)) fence = !fence;
+      return !fence && !FENCE_RE.test(ln);
+    }).join('\n').replace(/`[^`]*`/g, '');
+  };
+  for (const p of report.projects) {
+    const segs = splitBody(p.bodyMd);
+    const done = segs.find(s => s[0] === 'this week');
+    if (done) {
+      const work = done[1].split('\n')
+        .filter(ln => !isEmptyItem(ln) && !/no activit/i.test(ln));
+      if (p.days === 0 && work.length && daysEntered) {
+        out.push(`${p.name}: 0 days, but work is listed under "${tw}"`);
+      } else if (p.days > 0 && !work.length) {
+        out.push(`${p.name}: ${formatDays(p.days)}, but nothing is listed under "${tw}"`);
+      }
+    }
+    if (p.bodyMd.split('\n').some(ln => /^\s*(?:[-*+]|\d+[.)])\s*$/.test(ln))) {
+      out.push(`${p.name}: empty bullet`);
+    }
+    const repeats = new Set();
+    for (const m of noCode(p.bodyMd).matchAll(/(?<![\p{L}\p{N}])(\p{L}+)[ \t]+\1(?![\p{L}\p{N}])/giu)) {
+      repeats.add(m[0].toLowerCase());
+    }
+    for (const r of repeats) out.push(`${p.name}: repeated word "${r}"`);
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ history */
@@ -1239,6 +1427,7 @@ async function loadList(preferred) {
     state.current = null;
     state.lastEmail = state.renderedText = null;
     $('editor').value = '';
+    renderHighlight();
     $('preview').srcdoc = '';
     renderOutline();
     setStatus('');
@@ -1256,6 +1445,7 @@ async function openFile(name) {
   const text = await readFile(name);
   state.current = name;
   $('editor').value = text;
+  renderHighlight();
   state.dirty = false;
   $('dirty').hidden = true;
   setStatus('');
@@ -1642,6 +1832,25 @@ function editorKeydown(e) {
   }
 }
 
+/* The textarea's own text is transparent; this layer behind it shows the
+   same text colored. The extra newline gives a trailing empty line height,
+   as the textarea does. */
+function renderHighlight() {
+  const layer = $('edhl');
+  layer.innerHTML = highlightMd($('editor').value) + '\n';
+  layer.scrollTop = $('editor').scrollTop;
+}
+
+function tidy(ed) {
+  const out = tidyReport(ed.value);
+  if (out === ed.value) {
+    setStatus('Already tidy');
+    return;
+  }
+  setText(ed, out);
+  setStatus('Tidied (Ctrl+Z undoes it)');
+}
+
 const TOOLBAR = {
   bold: ed => wrapSelection(ed, ...MARKS.b),
   italic: ed => wrapSelection(ed, ...MARKS.i),
@@ -1651,6 +1860,7 @@ const TOOLBAR = {
   link: insertLink,
   code: insertCode,
   project: addProject,
+  tidy,
 };
 
 /* images */
@@ -2114,7 +2324,11 @@ $('eml').addEventListener('click', async () => {
 
 /* event wiring */
 
+$('editor').addEventListener('input', renderHighlight);
 $('editor').addEventListener('input', scheduleSave);
+$('editor').addEventListener('scroll', () => {
+  $('edhl').scrollTop = $('editor').scrollTop;
+});
 $('editor').addEventListener('keydown', editorKeydown);
 $('file').addEventListener('change', e => {
   flushSave().then(() => openFile(e.target.value))
@@ -2354,7 +2568,7 @@ $('editor').addEventListener('drop', e => {
 
 function applySpell(on) {
   $('editor').spellcheck = on;
-  $('spell').textContent = 'Spell: ' + (on ? 'on' : 'off');
+  $('spell').textContent = on ? 'Spell ✓' : 'Spell ✗';
   localStorage.setItem('spellcheck', on ? 'on' : 'off');
 }
 $('spell').addEventListener('click', () => {
@@ -2364,6 +2578,16 @@ $('spell').addEventListener('click', () => {
   $('editor').focus();
 });
 applySpell(localStorage.getItem('spellcheck') !== 'off');
+
+function applyEditorFont(sans) {
+  $('edwrap').classList.toggle('sans', sans);
+  $('edfont').textContent = sans ? 'Sans' : 'Mono';
+  localStorage.setItem('edfont', sans ? 'sans' : 'mono');
+}
+$('edfont').addEventListener('click', () => {
+  applyEditorFont(!$('edwrap').classList.contains('sans'));
+});
+applyEditorFont(localStorage.getItem('edfont') === 'sans');
 
 /* offline + installable; service workers need https or localhost */
 if ('serviceWorker' in navigator && window.isSecureContext) {
